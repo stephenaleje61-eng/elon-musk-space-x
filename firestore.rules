@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'johnlsacc23332@gmail.com'
+      );
+    }
+
+    // Health check & test connection
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    // Admins list
+    match /admins/{adminId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // User profiles - allow visitor profiles and updates
+    match /users/{userId} {
+      allow read, create, update: if true;
+      allow delete: if isAdmin();
+    }
+
+    // Friend requests - visitors can submit requests without mandatory email sign-in
+    match /friendRequests/{requestId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // One-on-one Conversations - accessible to participants
+    match /conversations/{conversationId} {
+      allow read, write: if true;
+    }
+
+    // Private Messages
+    match /messages/{messageId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // Products catalog (public read)
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Space & Infrastructure Investment inquiries
+    match /investments/{investmentId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
+    // Blocked users
+    match /blockedUsers/{blockedId} {
+      allow read, write: if true;
+    }
+  }
+}

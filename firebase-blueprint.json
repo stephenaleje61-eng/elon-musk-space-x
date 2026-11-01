@@ -1,0 +1,170 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile entity for visitors and administrators",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 512 },
+        "email": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["visitor", "admin"] },
+        "status": { "type": "string", "enum": ["active", "blocked"] },
+        "about": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "displayName"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "Friend request sent by visitors to connect with the community administrator",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 512 },
+        "recipientId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["PENDING", "ACCEPTED", "REJECTED"] },
+        "note": { "type": "string", "maxLength": 280 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["senderId", "displayName", "recipientId", "status"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "One-to-one private conversation between visitor and administrator",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string", "maxLength": 128 },
+        "participants": { "type": "string" },
+        "visitorId": { "type": "string", "maxLength": 128 },
+        "visitorName": { "type": "string", "maxLength": 80 },
+        "visitorPhoto": { "type": "string", "maxLength": 512 },
+        "adminId": { "type": "string", "maxLength": 128 },
+        "lastMessage": { "type": "string", "maxLength": 500 },
+        "lastMessageAt": { "type": "string" },
+        "lastSenderId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["visitorId", "adminId"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Private message inside a conversation",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string", "maxLength": 128 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 80 },
+        "receiverId": { "type": "string", "maxLength": 128 },
+        "text": { "type": "string", "maxLength": 4000 },
+        "imageUrl": { "type": "string", "maxLength": 2048 },
+        "messageType": { "type": "string", "enum": ["text", "image"] },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["conversationId", "senderId", "receiverId"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Technology products catalog item",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "maxLength": 50 },
+        "company": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "specs": { "type": "string", "maxLength": 1000 },
+        "imageUrl": { "type": "string", "maxLength": 1024 },
+        "officialUrl": { "type": "string", "maxLength": 512 },
+        "availability": { "type": "string", "maxLength": 100 },
+        "featured": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "category", "description"]
+    },
+    "InvestmentInquiry": {
+      "title": "InvestmentInquiry",
+      "description": "Accredited and institutional investor inquiry for space and infrastructure capital allocations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "investorName": { "type": "string", "maxLength": 100 },
+        "organization": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "investorType": { "type": "string", "enum": ["Individual Accredited", "Family Office", "Venture Fund", "Institutional Syndicate", "Sovereign Fund"] },
+        "targetSector": { "type": "string", "maxLength": 100 },
+        "targetAmount": { "type": "string", "maxLength": 80 },
+        "timeline": { "type": "string", "maxLength": 50 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "status": { "type": "string", "enum": ["SUBMITTED", "IN_REVIEW", "CONNECTED", "DECLINED"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["investorName", "investorType", "targetSector", "targetAmount", "status"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System or user notifications",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["friend_request", "request_accepted", "request_rejected", "new_message", "investment_inquiry", "system"] },
+        "title": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 300 },
+        "link": { "type": "string", "maxLength": 200 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "type", "title", "message"]
+    },
+    "BlockedUser": {
+      "title": "BlockedUser",
+      "description": "Blocked user record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "reason": { "type": "string", "maxLength": 300 },
+        "blockedAt": { "type": "string" }
+      },
+      "required": ["userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Public user profiles"
+    },
+    "/friendRequests/{requestId}": {
+      "schema": "FriendRequest",
+      "description": "Friend connection requests"
+    },
+    "/conversations/{conversationId}": {
+      "schema": "Conversation",
+      "description": "One-on-one conversation threads"
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Private messages in conversations"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Showcased technology products"
+    },
+    "/investments/{investmentId}": {
+      "schema": "InvestmentInquiry",
+      "description": "Accredited and institutional capital allocation inquiries for space infrastructure"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Targeted notifications for users and admins"
+    },
+    "/blockedUsers/{blockedId}": {
+      "schema": "BlockedUser",
+      "description": "List of blocked users"
+    }
+  }
+}
