@@ -11,7 +11,8 @@ import {
   UserPlus, 
   CheckCircle, 
   Clock, 
-  DollarSign 
+  TrendingUp, 
+  CheckCheck 
 } from 'lucide-react';
 import { useAuth } from '../firebase/authContext';
 import { listenToUserFriendRequest, listenToNotifications, markNotificationAsRead } from '../firebase/services';
@@ -57,6 +58,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const unreadNotifs = notifications.filter((n) => !n.read).length;
 
+  const handleMarkAllNotificationsRead = async () => {
+    for (const n of notifications) {
+      if (!n.read) {
+        await markNotificationAsRead(n.id);
+      }
+    }
+  };
+
   const navItems = [
     { id: 'home', label: 'HOME' },
     { id: 'companies', label: 'COMPANIES' },
@@ -73,7 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           
-          {/* Logo (Monochrome Black & White) */}
+          {/* Logo */}
           <div 
             onClick={() => setCurrentView('home')}
             className="flex items-center space-x-3 cursor-pointer group"
@@ -110,7 +119,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {item.label}
                   {item.id === 'investment' && (
                     <span className="ml-1 px-1 py-0.2 rounded text-[8px] bg-white text-black font-extrabold">
-                      NEW
+                      SPACE
                     </span>
                   )}
                   {item.id === 'messages' && friendRequest?.status === 'ACCEPTED' && (
@@ -152,7 +161,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="absolute right-0 mt-2 w-80 bg-[#0a0a0a] border border-[#222222] rounded-xl shadow-2xl py-2 z-50">
                   <div className="px-4 py-2 border-b border-[#222222] flex items-center justify-between">
                     <span className="text-[10px] font-mono font-bold text-white tracking-widest uppercase">NOTIFICATIONS</span>
-                    <span className="text-[10px] text-white/40">{notifications.length} total</span>
+                    {unreadNotifs > 0 && (
+                      <button
+                        onClick={handleMarkAllNotificationsRead}
+                        className="text-[9px] text-white/50 hover:text-white font-mono underline"
+                      >
+                        Mark all read
+                      </button>
+                    )}
                   </div>
                   <div className="max-h-72 overflow-y-auto divide-y divide-[#1f1f1f]">
                     {notifications.length === 0 ? (
@@ -190,19 +206,32 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
-            {/* Friend Request Status Button (Black & White) */}
+            {/* Direct 1-on-1 Chat Trigger */}
+            <button
+              onClick={() => setCurrentView('messages')}
+              className={`hidden sm:inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+                currentView === 'messages'
+                  ? 'bg-white text-black shadow-md'
+                  : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>CHAT</span>
+            </button>
+
+            {/* Friend Request Status Button */}
             {friendRequest?.status === 'ACCEPTED' ? (
               <button
                 onClick={() => setCurrentView('messages')}
                 className="hidden sm:inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/10 border border-white/30 rounded-full text-[11px] font-bold text-white hover:bg-white/20 transition-all"
               >
                 <CheckCircle className="w-3.5 h-3.5 text-white" />
-                <span>CONNECTED</span>
+                <span>VERIFIED</span>
               </button>
             ) : friendRequest?.status === 'PENDING' ? (
               <button
                 onClick={onOpenFriendModal}
-                className="hidden sm:inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/5 border border-white/20 rounded-full text-[11px] font-medium text-white/80"
+                className="hidden sm:inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white/5 border border-white/20 rounded-full text-[11px] font-medium text-white/80 hover:bg-white/10 transition-colors"
               >
                 <Clock className="w-3.5 h-3.5 animate-spin" />
                 <span>PENDING</span>
@@ -210,9 +239,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             ) : (
               <button
                 onClick={onOpenFriendModal}
-                className="hidden sm:inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-white hover:bg-zinc-200 text-black rounded-full text-[11px] font-extrabold transition-all shadow-sm"
+                className="hidden sm:inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-full text-[11px] font-bold transition-all"
               >
-                <UserPlus className="w-3.5 h-3.5 text-black" />
+                <UserPlus className="w-3.5 h-3.5 text-white" />
                 <span>CONNECT</span>
               </button>
             )}
@@ -249,7 +278,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Mobile Menu Toggle */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 text-white/70 hover:text-white rounded-lg"
+              className="lg:hidden p-2 text-white/70 hover:text-white rounded-lg focus:outline-none"
+              aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -259,7 +289,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-[#000000] border-b border-[#222222] px-4 pt-3 pb-6 space-y-1.5">
+        <div className="lg:hidden bg-[#000000] border-b border-[#222222] px-4 pt-3 pb-6 space-y-1 animate-fade-in">
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -267,25 +297,40 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setCurrentView(item.id);
                 setMobileMenuOpen(false);
               }}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold tracking-wider ${
+              className={`w-full text-left px-3.5 py-3 rounded-lg text-xs font-bold tracking-wider flex items-center justify-between ${
                 currentView === item.id
                   ? 'bg-white text-black'
                   : 'text-white/60 hover:bg-[#111111] hover:text-white'
               }`}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {item.id === 'investment' && (
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-black text-white font-bold">
+                  PORTAL
+                </span>
+              )}
             </button>
           ))}
-          <div className="pt-3 border-t border-[#1f1f1f]">
+          <div className="pt-3 border-t border-[#1f1f1f] space-y-2">
+            <button
+              onClick={() => {
+                setCurrentView('messages');
+                setMobileMenuOpen(false);
+              }}
+              className="w-full py-3.5 px-3 bg-white text-black rounded-xl text-xs font-black flex items-center justify-center space-x-2 shadow-lg"
+            >
+              <MessageSquare className="w-4 h-4 text-black" />
+              <span>CHAT WITH ELON MUSK (1-ON-1)</span>
+            </button>
             <button
               onClick={() => {
                 onOpenFriendModal();
                 setMobileMenuOpen(false);
               }}
-              className="w-full py-2.5 px-3 bg-white text-black rounded-lg text-xs font-bold flex items-center justify-center space-x-2"
+              className="w-full py-2.5 px-3 bg-[#111111] border border-[#222222] text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-2"
             >
-              <UserPlus className="w-4 h-4" />
-              <span>SEND FRIEND REQUEST</span>
+              <UserPlus className="w-3.5 h-3.5 text-white" />
+              <span>REQUEST VERIFIED BADGE</span>
             </button>
           </div>
         </div>

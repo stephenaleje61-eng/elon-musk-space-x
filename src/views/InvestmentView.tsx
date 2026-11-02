@@ -260,7 +260,27 @@ export const InvestmentView: React.FC = () => {
                 onChange={(e) => setAnnualFlights(Number(e.target.value))}
                 className="w-full accent-white bg-zinc-800 h-1.5 rounded cursor-pointer"
               />
-              <span className="text-[10px] text-white/40 block">From early orbital trials to daily fleet cadence</span>
+              <div className="flex items-center space-x-1.5 mt-2">
+                {[
+                  { label: 'Trial (30/yr)', val: 30 },
+                  { label: 'Fleet Cadence (100/yr)', val: 100 },
+                  { label: 'Megascale (300/yr)', val: 300 },
+                ].map((preset) => (
+                  <button
+                    key={preset.val}
+                    type="button"
+                    onClick={() => setAnnualFlights(preset.val)}
+                    className={`px-2 py-0.5 rounded text-[9px] font-mono border transition-colors ${
+                      annualFlights === preset.val
+                        ? 'bg-white text-black font-bold border-white'
+                        : 'bg-[#141414] text-white/60 border-[#262626] hover:text-white'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] text-white/40 block mt-1">From early orbital trials to daily fleet cadence</span>
             </div>
 
             <div>
@@ -277,7 +297,27 @@ export const InvestmentView: React.FC = () => {
                 onChange={(e) => setPayloadPerFlight(Number(e.target.value))}
                 className="w-full accent-white bg-zinc-800 h-1.5 rounded cursor-pointer"
               />
-              <span className="text-[10px] text-white/40 block">Full reusable cargo configuration</span>
+              <div className="flex items-center space-x-1.5 mt-2">
+                {[
+                  { label: 'Starship V2 (150t)', val: 150 },
+                  { label: 'Starship V3 (200t)', val: 200 },
+                  { label: 'Heavy Cargo (250t)', val: 250 },
+                ].map((preset) => (
+                  <button
+                    key={preset.val}
+                    type="button"
+                    onClick={() => setPayloadPerFlight(preset.val)}
+                    className={`px-2 py-0.5 rounded text-[9px] font-mono border transition-colors ${
+                      payloadPerFlight === preset.val
+                        ? 'bg-white text-black font-bold border-white'
+                        : 'bg-[#141414] text-white/60 border-[#262626] hover:text-white'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] text-white/40 block mt-1">Full reusable cargo configuration</span>
             </div>
           </div>
 

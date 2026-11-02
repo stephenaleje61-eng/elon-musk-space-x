@@ -82,19 +82,42 @@ export const HomeView: React.FC<HomeViewProps> = ({
             Discover groundbreaking aerospace technologies, explore multiplanetary enterprises, review futuristic hardware specifications, inspect space investment syndicates, and communicate across a verified technology community.
           </p>
 
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+          {/* PROMINENT PRIMARY HERO ACTION: CHAT WITH ELON MUSK */}
+          <div className="pt-3 pb-1 max-w-xl mx-auto w-full flex flex-col items-center">
+            <button
+              onClick={() => setCurrentView('messages')}
+              className="w-full sm:w-auto min-w-[300px] sm:min-w-[340px] px-8 py-4 bg-white text-black hover:bg-zinc-200 active:scale-[0.98] transition-all font-black text-sm sm:text-base uppercase tracking-widest rounded-2xl flex items-center justify-center space-x-3 shadow-[0_0_35px_rgba(255,255,255,0.25)] hover:shadow-[0_0_45px_rgba(255,255,255,0.4)] cursor-pointer group"
+            >
+              <div className="relative flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 text-black group-hover:scale-110 transition-transform" />
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-black ring-2 ring-white animate-ping"></span>
+              </div>
+              <span className="font-extrabold tracking-wider">CHAT WITH ELON MUSK</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black text-white font-bold ml-1">
+                1-ON-1
+              </span>
+            </button>
+
+            {/* Transparency Disclosure */}
+            <div className="pt-2 text-[10px] text-white/60 font-mono flex items-center justify-center space-x-2 text-center">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span>Direct 1-on-1 Platform Channel • Administrator Responds Personally • No Login Required</span>
+            </div>
+          </div>
+
+          {/* Secondary Action Buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <button
               onClick={() => setCurrentView('investment')}
-              className="w-full sm:w-auto px-7 py-3.5 bg-white text-black font-black text-xs uppercase tracking-widest rounded-xl transition-all hover:bg-zinc-200 flex items-center justify-center space-x-2"
+              className="w-full sm:w-auto px-6 py-3 bg-[#111111] hover:bg-[#1a1a1a] border border-white/30 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center space-x-2"
             >
-              <TrendingUp className="w-4 h-4 text-black" />
+              <TrendingUp className="w-4 h-4 text-white" />
               <span>INVESTMENT FOR SPACE</span>
             </button>
 
             <button
               onClick={() => setCurrentView('products')}
-              className="w-full sm:w-auto px-7 py-3.5 bg-[#111111] hover:bg-[#1a1a1a] border border-white/20 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center space-x-2"
+              className="w-full sm:w-auto px-6 py-3 bg-[#111111] hover:bg-[#1a1a1a] border border-white/20 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center space-x-2"
             >
               <Zap className="w-4 h-4 text-white" />
               <span>EXPLORE TECHNOLOGY</span>
@@ -102,7 +125,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
             <button
               onClick={() => setCurrentView('companies')}
-              className="w-full sm:w-auto px-7 py-3.5 bg-[#0a0a0a] hover:bg-[#141414] border border-[#222222] text-white/80 hover:text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center space-x-2"
+              className="w-full sm:w-auto px-6 py-3 bg-[#0a0a0a] hover:bg-[#141414] border border-[#222222] text-white/80 hover:text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center space-x-2"
             >
               <Rocket className="w-4 h-4 text-white/70" />
               <span>COMPANIES</span>
@@ -110,7 +133,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
             <button
               onClick={onOpenFriendModal}
-              className="w-full sm:w-auto px-7 py-3.5 bg-zinc-900 hover:bg-zinc-800 border border-white/30 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center space-x-2"
+              className="w-full sm:w-auto px-6 py-3 bg-zinc-900 hover:bg-zinc-800 border border-white/30 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center space-x-2"
             >
               <UserPlus className="w-4 h-4 text-white" />
               <span>CONNECT</span>
@@ -496,36 +519,60 @@ export const HomeView: React.FC<HomeViewProps> = ({
       {/* 9. COMMUNITY & PRIVATE MESSAGING NETWORK */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="p-8 sm:p-12 rounded-3xl bg-[#0a0a0a] border border-[#222222] text-center space-y-6">
-          <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 mx-auto flex items-center justify-center text-white">
-            <MessageSquare className="w-6 h-6" />
+          <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 mx-auto flex items-center justify-center text-white shadow-lg">
+            <MessageSquare className="w-7 h-7" />
           </div>
 
           <div className="space-y-2 max-w-xl mx-auto">
-            <h2 className="text-2xl font-bold text-white tracking-tight uppercase">
-              VERIFIED PRIVATE MESSAGING NETWORK
+            <div className="inline-flex items-center space-x-2 text-[10px] font-mono text-white/50 uppercase tracking-widest">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>DIRECT PLATFORM CHANNEL • REAL-TIME FIRESTORE</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight uppercase">
+              CHAT WITH ELON MUSK SPACE
             </h2>
             <p className="text-xs text-white/60 leading-relaxed">
-              Direct, 1-on-1 private messaging network powered by real-time Firestore synchronization and image uploads for verified community connections.
+              Connect 1-on-1 directly with the website owner and administrator. Send technical inquiries, discuss space investment syndicates, or explore rocket propulsion breakthroughs. Messages are stored permanently in Firestore and are answered personally.
             </p>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-3">
+          <div className="flex flex-wrap justify-center gap-3 pt-2">
             <button
               onClick={() => setCurrentView('messages')}
-              className="px-7 py-3 bg-white text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+              className="px-8 py-3.5 bg-white text-black font-extrabold text-xs uppercase tracking-widest rounded-xl transition-all hover:bg-zinc-200 flex items-center space-x-2 shadow-lg cursor-pointer"
             >
-              OPEN PRIVATE MESSAGES
+              <MessageSquare className="w-4 h-4 text-black" />
+              <span>CHAT WITH ELON MUSK</span>
             </button>
 
             <button
               onClick={onOpenFriendModal}
-              className="px-7 py-3 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+              className="px-7 py-3.5 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center space-x-2"
             >
-              TRANSMIT FRIEND REQUEST
+              <UserPlus className="w-4 h-4 text-white" />
+              <span>REQUEST VERIFIED BADGE</span>
             </button>
+          </div>
+
+          <div className="pt-2 text-[10px] text-white/40 font-mono">
+            Personal platform chat managed directly by website administrator. Not an official Elon Musk account. No bots or automated responders.
           </div>
         </div>
       </section>
+
+      {/* Floating CHAT WITH ELON MUSK Quick Trigger */}
+      <aside aria-label="Quick Actions" className="fixed bottom-6 right-6 z-40">
+        <button
+          onClick={() => setCurrentView('messages')}
+          className="group flex items-center space-x-3 px-5 py-3.5 bg-white text-black hover:bg-zinc-200 text-xs font-black tracking-widest uppercase rounded-full shadow-[0_10px_30px_rgba(255,255,255,0.25)] hover:shadow-[0_12px_40px_rgba(255,255,255,0.4)] transition-all cursor-pointer border border-white"
+        >
+          <div className="relative">
+            <MessageSquare className="w-4 h-4 text-black group-hover:scale-110 transition-transform" />
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white"></span>
+          </div>
+          <span className="font-extrabold">CHAT WITH ELON MUSK</span>
+        </button>
+      </aside>
 
     </div>
   );

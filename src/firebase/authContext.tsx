@@ -159,12 +159,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         setLoading(false);
       } else {
-        // Try anonymous sign-in, but handle restriction gracefully without error crashing
+        // If already known that anonymous auth is restricted by GCP project policy, initialize local visitor immediately
+        if (localStorage.getItem('elon_anonymous_auth_restricted') === 'true') {
+          setAnonymousRestricted(true);
+          const fallbackId = getLocalVisitorId();
+          await setupLocalVisitor(fallbackId);
+          return;
+        }
+
+        // Otherwise try anonymous sign-in, but handle restriction gracefully without error crashing
         try {
           await signInAnonymously(auth);
         } catch (authError: any) {
           // Firebase project has Anonymous auth disabled in console (auth/admin-restricted-operation)
-          // Gracefully initialize persistent visitor session
+          // Gracefully remember and initialize persistent visitor session
+          localStorage.setItem('elon_anonymous_auth_restricted', 'true');
           setAnonymousRestricted(true);
           const fallbackId = getLocalVisitorId();
           await setupLocalVisitor(fallbackId);

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, X, ChevronRight, Rocket, Car, Cpu, Globe, Zap, ArrowRight, TrendingUp } from 'lucide-react';
+import { Search, X, ChevronRight, Rocket, Car, Cpu, Globe, Zap, ArrowRight, TrendingUp, Sparkles, Building2, Layers } from 'lucide-react';
 import { PRODUCTS_DATA, COMPANIES_DATA, TECH_DEEP_DIVES } from '../data/platformData';
 import { ProductItem } from '../types';
 
@@ -19,6 +19,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   onNavigate,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeFilter, setActiveFilter] = useState<'ALL' | 'PRODUCTS' | 'COMPANIES' | 'TECH' | 'INVESTMENT'>('ALL');
 
   const filteredProducts = useMemo(() => {
     if (!searchTerm.trim()) return [];
@@ -54,11 +55,19 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     );
   }, [searchTerm]);
 
+  // Check if search query matches space investment keywords
+  const matchesInvestment = useMemo(() => {
+    if (!searchTerm.trim()) return false;
+    const term = searchTerm.toLowerCase();
+    const keywords = ['invest', 'space', 'capital', 'syndicate', 'tier', 'starship', 'allocation', 'fund', 'starlink', 'valuation', 'round'];
+    return keywords.some((k) => term.includes(k) || k.includes(term));
+  }, [searchTerm]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/85 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-2xl bg-[#0a0a0a] border border-[#222222] rounded-2xl shadow-2xl overflow-hidden text-white flex flex-col max-h-[80vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-20 px-3 sm:px-4 bg-black/85 backdrop-blur-md animate-fade-in">
+      <div className="relative w-full max-w-2xl bg-[#0a0a0a] border border-[#222222] rounded-2xl shadow-2xl overflow-hidden text-white flex flex-col max-h-[85vh]">
         
         {/* Search Bar Input */}
         <div className="flex items-center px-4 py-3.5 border-b border-[#222222] bg-black">
@@ -81,10 +90,33 @@ export const SearchModal: React.FC<SearchModalProps> = ({
           )}
           <button
             onClick={onClose}
-            className="text-[10px] px-2 py-0.5 bg-[#141414] text-white/50 hover:text-white rounded border border-[#262626] font-mono"
+            className="text-[10px] px-2 py-0.5 bg-[#141414] text-white/50 hover:text-white rounded border border-[#262626] font-mono shrink-0"
           >
             ESC
           </button>
+        </div>
+
+        {/* Filter Pills */}
+        <div className="px-4 py-2 border-b border-[#1f1f1f] bg-[#0c0c0c] flex items-center space-x-1.5 overflow-x-auto scrollbar-thin">
+          {[
+            { id: 'ALL', label: 'ALL' },
+            { id: 'PRODUCTS', label: `PRODUCTS (${filteredProducts.length})` },
+            { id: 'COMPANIES', label: `COMPANIES (${filteredCompanies.length})` },
+            { id: 'TECH', label: `TECH CONCEPTS (${filteredTech.length})` },
+            { id: 'INVESTMENT', label: 'SPACE INVESTMENTS' },
+          ].map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveFilter(cat.id as any)}
+              className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase whitespace-nowrap transition-colors ${
+                activeFilter === cat.id
+                  ? 'bg-white text-black font-bold'
+                  : 'bg-[#141414] text-white/60 hover:text-white border border-[#222222]'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
         </div>
 
         {/* Results Area */}
@@ -111,17 +143,41 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                 ))}
               </div>
             </div>
-          ) : filteredProducts.length === 0 && filteredCompanies.length === 0 && filteredTech.length === 0 ? (
-            <div className="py-12 text-center text-xs text-white/40 font-mono">
-              No results found matching "{searchTerm}".
-            </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-5">
+              
+              {/* Space Investment Highlight if applicable */}
+              {(activeFilter === 'ALL' || activeFilter === 'INVESTMENT') && matchesInvestment && (
+                <div
+                  onClick={() => {
+                    onNavigate('investment');
+                    onClose();
+                  }}
+                  className="p-3.5 rounded-xl bg-white/5 border border-white/20 hover:border-white cursor-pointer transition-all flex items-center justify-between group"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 rounded-lg bg-white text-black flex items-center justify-center font-bold">
+                      <TrendingUp className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover:text-white transition-colors flex items-center space-x-2">
+                        <span>SPACE INVESTMENT & CAPITAL ALLOCATION PORTAL</span>
+                        <span className="text-[8px] bg-white text-black font-extrabold px-1 rounded">ACCELERATED</span>
+                      </div>
+                      <div className="text-[10px] text-white/60 font-mono">
+                        Direct allocation tiers ($50K - $1M+) • Starship Launch Economics Calculator
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-white/60 group-hover:text-white transition-transform group-hover:translate-x-1" />
+                </div>
+              )}
+
               {/* Products Match */}
-              {filteredProducts.length > 0 && (
+              {(activeFilter === 'ALL' || activeFilter === 'PRODUCTS') && filteredProducts.length > 0 && (
                 <div>
                   <h4 className="text-[10px] font-mono font-bold tracking-wider text-white/40 uppercase mb-2">
-                    PRODUCTS ({filteredProducts.length})
+                    PRODUCTS & HARDWARE ({filteredProducts.length})
                   </h4>
                   <div className="space-y-1.5">
                     {filteredProducts.map((p) => (
@@ -156,7 +212,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               )}
 
               {/* Companies Match */}
-              {filteredCompanies.length > 0 && (
+              {(activeFilter === 'ALL' || activeFilter === 'COMPANIES') && filteredCompanies.length > 0 && (
                 <div>
                   <h4 className="text-[10px] font-mono font-bold tracking-wider text-white/40 uppercase mb-2">
                     COMPANIES ({filteredCompanies.length})
@@ -192,7 +248,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               )}
 
               {/* Tech Deep Dives Match */}
-              {filteredTech.length > 0 && (
+              {(activeFilter === 'ALL' || activeFilter === 'TECH') && filteredTech.length > 0 && (
                 <div>
                   <h4 className="text-[10px] font-mono font-bold tracking-wider text-white/40 uppercase mb-2">
                     TECHNOLOGY CONCEPTS ({filteredTech.length})
@@ -219,6 +275,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                   </div>
                 </div>
               )}
+
+              {filteredProducts.length === 0 && filteredCompanies.length === 0 && filteredTech.length === 0 && !matchesInvestment && (
+                <div className="py-12 text-center text-xs text-white/40 font-mono">
+                  No results found matching "{searchTerm}".
+                </div>
+              )}
+
             </div>
           )}
         </div>

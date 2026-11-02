@@ -29,10 +29,6 @@ export async function testConnection(): Promise<boolean> {
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase connection: client appears offline. Please check network/config.');
-    }
-    // Expected in initial setup if test doc is empty
     return false;
   }
 }

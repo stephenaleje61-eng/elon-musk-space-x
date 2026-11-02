@@ -231,6 +231,43 @@ export function listenToConversationMessages(
   });
 }
 
+export async function ensureVisitorConversation(
+  visitorId: string,
+  visitorName: string = 'Explorer',
+  visitorPhoto?: string
+): Promise<Conversation> {
+  const convId = `conv_${visitorId}_admin`;
+  const convRef = doc(db, 'conversations', convId);
+  const now = new Date().toISOString();
+
+  const baseConv: Conversation = {
+    id: convId,
+    conversationId: convId,
+    participants: [visitorId, 'admin'],
+    visitorId,
+    visitorName,
+    visitorPhoto: visitorPhoto || undefined,
+    adminId: 'admin',
+    lastMessage: 'Channel opened',
+    lastMessageAt: now,
+    lastSenderId: visitorId,
+    createdAt: now,
+    unreadCount: 0,
+  };
+
+  try {
+    const snap = await getDoc(convRef);
+    if (!snap.exists()) {
+      await setDoc(convRef, baseConv, { merge: true });
+      return baseConv;
+    }
+    return snap.data() as Conversation;
+  } catch (error) {
+    console.error('Error ensuring visitor conversation:', error);
+    return baseConv;
+  }
+}
+
 export async function sendMessage(
   conversationId: string,
   senderId: string,
@@ -258,17 +295,32 @@ export async function sendMessage(
   };
 
   try {
+    // 1. Permanently save message to Firestore 'messages' collection
     await setDoc(doc(db, 'messages', msgId), msgData);
 
-    // Update conversation last message snippet
+    // 2. Safely create or update conversation metadata using setDoc merge: true
     const convRef = doc(db, 'conversations', conversationId);
-    await updateDoc(convRef, {
+    const visitorId = senderId === 'admin' ? receiverId : senderId;
+    
+    const convUpdatePayload: Record<string, any> = {
+      id: conversationId,
+      conversationId,
+      participants: [visitorId, 'admin'],
+      visitorId,
+      adminId: 'admin',
       lastMessage: imageUrl ? '📷 [Image attachment]' : text.trim(),
       lastMessageAt: now,
       lastSenderId: senderId,
-    });
+      updatedAt: now,
+    };
 
-    // Notify receiver
+    if (senderId !== 'admin') {
+      convUpdatePayload.visitorName = senderName;
+    }
+
+    await setDoc(convRef, convUpdatePayload, { merge: true });
+
+    // 3. Notify receiver
     const notifId = `notif_${receiverId}_${Date.now()}`;
     await setDoc(doc(db, 'notifications', notifId), {
       id: notifId,
@@ -320,19 +372,31 @@ export function listenToAdminConversations(
 
 export function listenToVisitorConversation(
   visitorId: string, 
-  callback: (conversation: Conversation | null) => void
+  callback: (conversation: Conversation) => void
 ) {
   const convId = `conv_${visitorId}_admin`;
   const convRef = doc(db, 'conversations', convId);
+
+  // Return baseline representation if doc does not exist yet
+  const defaultConv: Conversation = {
+    id: convId,
+    conversationId: convId,
+    participants: [visitorId, 'admin'],
+    visitorId,
+    visitorName: `Explorer-${visitorId.slice(-4).toUpperCase()}`,
+    adminId: 'admin',
+    createdAt: new Date().toISOString(),
+  };
+
   return onSnapshot(convRef, (docSnap) => {
     if (docSnap.exists()) {
       callback(docSnap.data() as Conversation);
     } else {
-      callback(null);
+      callback(defaultConv);
     }
   }, (err) => {
     console.error('Error listening to visitor conversation:', err);
-    callback(null);
+    callback(defaultConv);
   });
 }
 
