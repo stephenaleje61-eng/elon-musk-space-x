@@ -44,7 +44,7 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <div className="min-h-screen bg-[#000000] text-[#FFFFFF] font-sans antialiased selection:bg-white selection:text-black flex flex-col">
+      <div className="min-h-screen bg-black text-white font-sans antialiased selection:bg-white selection:text-black flex flex-col">
         
         {/* Navigation */}
         <Navbar

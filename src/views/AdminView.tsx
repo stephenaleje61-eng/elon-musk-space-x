@@ -21,9 +21,13 @@ import {
   ArrowLeft, 
   CheckCircle2, 
   ExternalLink, 
-  AlertCircle 
+  AlertCircle,
+  LogIn,
+  Reply,
+  CornerDownRight,
+  CircleDot
 } from 'lucide-react';
-import { useAuth } from '../firebase/authContext';
+import { useAuth, PRIMARY_ADMIN_EMAIL, ADMIN_EMAILS } from '../firebase/authContext';
 import { 
   listenToAllFriendRequests, 
   acceptFriendRequest, 
@@ -37,24 +41,25 @@ import {
   listenToBlockedUsers, 
   deleteMessage, 
   listenToInvestmentInquiries, 
-  updateInvestmentStatus 
+  updateInvestmentStatus,
+  markMessagesAsRead
 } from '../firebase/services';
-import { FriendRequest, Conversation, Message, UserProfile } from '../types';
-import { PRODUCTS_DATA } from '../data/platformData';
+import { FriendRequest, Conversation, Message, UserProfile, MessageReplyContext } from '../types';
+import { SafeImage } from '../components/SafeImage';
 
 interface AdminViewProps {
   onOpenMessagesWithUser?: (conversationId: string) => void;
 }
 
 export const AdminView: React.FC<AdminViewProps> = () => {
-  const { user, isAdmin, setAdminOverride } = useAuth();
+  const { user, profile, isAdmin, signInWithGoogle, setAdminOverride } = useAuth();
   
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'investments' | 'requests' | 'friends' | 'chat' | 'images' | 'users' | 'blocked' | 'products' | 'settings'
-  >('overview');
+    'chat' | 'users' | 'investments' | 'requests' | 'blocked'
+  >('chat');
 
-  // Master Passkey Authentication
+  // Master Passkey Authentication State
   const [passkeyInput, setPasskeyInput] = useState('');
   const [passkeyError, setPasskeyError] = useState(false);
 
@@ -69,16 +74,13 @@ export const AdminView: React.FC<AdminViewProps> = () => {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [replyText, setReplyText] = useState('');
+  const [adminReplyTo, setAdminReplyTo] = useState<Message | null>(null);
   const [isSendingReply, setIsSendingReply] = useState(false);
   const [adminChatMobileView, setAdminChatMobileView] = useState<'list' | 'chat'>('list');
 
   // Search & Filtering State
   const [investmentSearch, setInvestmentSearch] = useState('');
   const [investmentFilter, setInvestmentFilter] = useState('ALL');
-  
-  const [requestSearch, setRequestSearch] = useState('');
-  const [requestFilter, setRequestFilter] = useState('ALL');
-
   const [chatSearch, setChatSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
 
@@ -119,6 +121,7 @@ export const AdminView: React.FC<AdminViewProps> = () => {
     if (!selectedConversation) return;
     const unsub = listenToConversationMessages(selectedConversation.id, (msgs) => {
       setChatMessages(msgs);
+      markMessagesAsRead(selectedConversation.id, 'admin');
     });
     return () => unsub();
   }, [selectedConversation]);
@@ -126,50 +129,55 @@ export const AdminView: React.FC<AdminViewProps> = () => {
   // Handle Passkey Login
   const handlePasskeySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (passkeyInput === 'musk2026' || passkeyInput === 'admin' || passkeyInput === 'spaceX') {
+    if (
+      passkeyInput === 'musk2026' || 
+      passkeyInput === 'admin' || 
+      passkeyInput === 'spaceX' ||
+      passkeyInput.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase()
+    ) {
       setAdminOverride(true);
       setPasskeyError(false);
       setPasskeyInput('');
-      showNotice('Admin privileges unlocked successfully.');
+      showNotice('Admin privileges unlocked for elonmusk241@gmail.com.');
     } else {
       setPasskeyError(true);
     }
   };
 
-  // Admin Friend Request Actions
-  const handleAccept = async (req: FriendRequest) => {
-    try {
-      await acceptFriendRequest(req, user?.uid || 'admin');
-      showNotice(`Accepted friend connection for ${req.displayName}. 1-on-1 chat initialized.`);
-    } catch (err: any) {
-      console.error('Failed to accept request:', err);
-    }
+  // Quick Unlock for testing
+  const handleDirectAdminAuth = () => {
+    setAdminOverride(true);
+    showNotice(`Admin authenticated as ${PRIMARY_ADMIN_EMAIL}`);
   };
 
-  const handleReject = async (req: FriendRequest) => {
-    try {
-      await rejectFriendRequest(req);
-      showNotice(`Request from ${req.displayName} updated to REJECTED.`);
-    } catch (err: any) {
-      console.error('Failed to reject request:', err);
-    }
-  };
-
-  // Admin Reply Action
+  // Send Reply from Admin
   const handleSendAdminReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedConversation || !replyText.trim() || !user) return;
+    if (!selectedConversation || !replyText.trim() || isSendingReply) return;
 
     setIsSendingReply(true);
     try {
+      let replyContext: MessageReplyContext | undefined = undefined;
+      if (adminReplyTo) {
+        replyContext = {
+          id: adminReplyTo.id,
+          senderName: adminReplyTo.senderName || 'Visitor',
+          text: adminReplyTo.text || (adminReplyTo.imageUrl ? '📷 [Image attachment]' : ''),
+          imageUrl: adminReplyTo.imageUrl,
+        };
+      }
+
       await sendMessage(
         selectedConversation.id,
-        user.uid,
-        'Community Administrator',
+        'admin',
+        'Elon Musk Space Administrator',
         selectedConversation.visitorId,
-        replyText.trim()
+        replyText.trim(),
+        undefined,
+        replyContext
       );
       setReplyText('');
+      setAdminReplyTo(null);
       showNotice(`Reply transmitted to ${selectedConversation.visitorName}.`);
     } catch (err) {
       console.error('Failed to send admin reply:', err);
@@ -177,39 +185,6 @@ export const AdminView: React.FC<AdminViewProps> = () => {
       setIsSendingReply(false);
     }
   };
-
-  // Filtered Space Investments
-  const filteredInvestments = useMemo(() => {
-    return investments.filter((inv) => {
-      const matchesSearch = 
-        !investmentSearch.trim() ||
-        inv.investorName?.toLowerCase().includes(investmentSearch.toLowerCase()) ||
-        inv.email?.toLowerCase().includes(investmentSearch.toLowerCase()) ||
-        inv.targetSector?.toLowerCase().includes(investmentSearch.toLowerCase()) ||
-        inv.organization?.toLowerCase().includes(investmentSearch.toLowerCase());
-
-      const matchesFilter = 
-        investmentFilter === 'ALL' || inv.status === investmentFilter;
-
-      return matchesSearch && matchesFilter;
-    });
-  }, [investments, investmentSearch, investmentFilter]);
-
-  // Filtered Friend Requests
-  const filteredRequests = useMemo(() => {
-    return friendRequests.filter((req) => {
-      const matchesSearch = 
-        !requestSearch.trim() ||
-        req.displayName?.toLowerCase().includes(requestSearch.toLowerCase()) ||
-        req.senderId?.toLowerCase().includes(requestSearch.toLowerCase()) ||
-        req.note?.toLowerCase().includes(requestSearch.toLowerCase());
-
-      const matchesFilter =
-        requestFilter === 'ALL' || req.status === requestFilter;
-
-      return matchesSearch && matchesFilter;
-    });
-  }, [friendRequests, requestSearch, requestFilter]);
 
   // Filtered Conversations
   const filteredConversations = useMemo(() => {
@@ -235,23 +210,55 @@ export const AdminView: React.FC<AdminViewProps> = () => {
     );
   }, [allUsers, userSearch]);
 
-  const pendingRequests = friendRequests.filter((r) => r.status === 'PENDING');
-  const acceptedFriends = friendRequests.filter((r) => r.status === 'ACCEPTED');
+  // Filtered Space Investments
+  const filteredInvestments = useMemo(() => {
+    return investments.filter((inv) => {
+      const matchesSearch = 
+        !investmentSearch.trim() ||
+        inv.investorName?.toLowerCase().includes(investmentSearch.toLowerCase()) ||
+        inv.email?.toLowerCase().includes(investmentSearch.toLowerCase()) ||
+        inv.targetSector?.toLowerCase().includes(investmentSearch.toLowerCase()) ||
+        inv.organization?.toLowerCase().includes(investmentSearch.toLowerCase());
 
-  // If not admin yet, show Admin Authorization Gate
+      const matchesFilter = 
+        investmentFilter === 'ALL' || inv.status === investmentFilter;
+
+      return matchesSearch && matchesFilter;
+    });
+  }, [investments, investmentSearch, investmentFilter]);
+
+  // If not admin yet, show Secure Admin Authorization Gate (Pure Dark)
   if (!isAdmin) {
     return (
-      <div className="max-w-md mx-auto px-4 pt-32 pb-24 bg-black">
-        <div className="bg-[#0a0a0a] border border-[#222222] rounded-3xl p-8 text-center space-y-6 shadow-2xl">
-          <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 text-white mx-auto flex items-center justify-center">
-            <Lock className="w-6 h-6 text-white" />
+      <div className="max-w-md mx-auto px-4 pt-32 pb-24 bg-black text-white">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl backdrop-blur-xl">
+          <div className="w-14 h-14 rounded-2xl bg-white text-black mx-auto flex items-center justify-center shadow-lg">
+            <Lock className="w-7 h-7 text-black" />
           </div>
 
-          <div className="space-y-1">
-            <h2 className="text-lg font-bold text-white tracking-tight uppercase">ADMINISTRATOR ACCESS</h2>
-            <p className="text-xs text-white/50 font-mono">
-              Privileged community & space investment administration panel.
+          <div className="space-y-1.5">
+            <h2 className="text-xl font-black text-white tracking-tight uppercase">
+              ADMINISTRATOR DASHBOARD
+            </h2>
+            <p className="text-xs text-zinc-400 font-mono">
+              Authorized Administrator: <span className="text-white font-bold font-mono">elonmusk241@gmail.com</span>
             </p>
+          </div>
+
+          {/* Google Sign-In Option */}
+          <div className="space-y-3 pt-2">
+            <button
+              onClick={signInWithGoogle}
+              className="w-full py-3 px-4 bg-white hover:bg-zinc-200 text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center space-x-2 cursor-pointer"
+            >
+              <LogIn className="w-4 h-4 text-black" />
+              <span>SIGN IN WITH GOOGLE</span>
+            </button>
+
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-zinc-800"></span></div>
+              <div className="relative flex justify-center text-[10px] uppercase font-mono"><span className="bg-zinc-900 px-2 text-zinc-500">OR AUTHORIZE PASSKEY</span></div>
+            </div>
           </div>
 
           <form onSubmit={handlePasskeySubmit} className="space-y-4">
@@ -261,564 +268,299 @@ export const AdminView: React.FC<AdminViewProps> = () => {
                 placeholder="Enter Administrator Passkey"
                 value={passkeyInput}
                 onChange={(e) => setPasskeyInput(e.target.value)}
-                className="w-full bg-[#111111] border border-[#222222] focus:border-white rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition-colors text-center"
+                className="w-full bg-black border border-zinc-800 focus:border-white rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none transition-colors text-center font-mono"
               />
-              <span className="text-[10px] text-white/40 mt-1 block font-mono">
-                (Staff passkey: <code className="text-white">admin</code> or <code className="text-white">spaceX</code>)
+              <span className="text-[10px] text-zinc-500 mt-1.5 block font-mono">
+                Staff Passkey: <code className="text-white font-bold">admin</code> or <code className="text-white font-bold">musk2026</code>
               </span>
             </div>
 
             {passkeyError && (
-              <p className="text-xs text-red-400">Invalid authorization credentials.</p>
+              <p className="text-xs text-red-400 font-medium">Invalid authorization credentials.</p>
             )}
 
             <button
               type="submit"
-              className="w-full py-2.5 px-4 bg-white hover:bg-zinc-200 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md"
+              className="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all border border-zinc-700 cursor-pointer"
             >
-              AUTHENTICATE ADMIN
+              UNLOCK ACCESS
             </button>
           </form>
+
+          {/* Quick One-Click Unlock For Development Testing */}
+          <div className="pt-2 border-t border-zinc-800">
+            <button
+              onClick={handleDirectAdminAuth}
+              className="text-[11px] font-mono text-zinc-400 hover:text-white underline cursor-pointer"
+            >
+              One-Click Dev Authorization (as elonmusk241@gmail.com)
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 space-y-6 bg-black">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 space-y-6 bg-black text-white">
       
       {/* Action Notice Confirmation Banner */}
       {actionNotice && (
-        <div className="p-3.5 rounded-xl bg-white/10 border border-white/30 text-white text-xs flex items-center justify-between font-mono animate-fade-in shadow-xl">
+        <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-700 text-white text-xs flex items-center justify-between font-mono animate-fade-in shadow-xl">
           <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{actionNotice}</span>
           </div>
           <button onClick={() => setActionNotice(null)}>
-            <X className="w-3.5 h-3.5 text-white/60 hover:text-white" />
+            <X className="w-3.5 h-3.5 text-zinc-400 hover:text-white" />
           </button>
         </div>
       )}
 
-      {/* Admin Top Banner */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 text-white flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-5 h-5" />
+      {/* Admin Header */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center space-x-2 text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>AUTHENTICATED ADMINISTRATOR: elonmusk241@gmail.com</span>
           </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-sm sm:text-base font-bold text-white tracking-tight uppercase">
-                ADMINISTRATOR COMMAND CENTER
-              </h1>
-              <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-white/15 text-white border border-white/20 font-mono">
-                Authorized
-              </span>
-            </div>
-            <p className="text-xs text-white/50">
-              Live Firestore Monitoring: Space Investments, Users, Friend Requests, and Private Chats
-            </p>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">
+            ADMINISTRATOR CONTROL PANEL
+          </h1>
+          <p className="text-xs text-zinc-400">
+            Real-time Messenger management, visitor directory, and space capital syndicate oversight.
+          </p>
         </div>
 
+        <div className="flex items-center space-x-3">
+          <div className="p-3 bg-black border border-zinc-800 rounded-2xl text-center shadow-sm min-w-[100px]">
+            <span className="text-[10px] font-mono text-zinc-500 uppercase block">CONVERSATIONS</span>
+            <span className="text-lg font-black text-white font-mono">{conversations.length}</span>
+          </div>
+          <div className="p-3 bg-black border border-zinc-800 rounded-2xl text-center shadow-sm min-w-[100px]">
+            <span className="text-[10px] font-mono text-zinc-500 uppercase block">VISITORS</span>
+            <span className="text-lg font-black text-white font-mono">{allUsers.length}</span>
+          </div>
+          <button
+            onClick={() => setAdminOverride(false)}
+            className="px-3.5 py-2.5 rounded-xl border border-zinc-700 text-xs text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+            title="Lock Dashboard"
+          >
+            Lock
+          </button>
+        </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="flex border-b border-zinc-800 overflow-x-auto space-x-2 pb-1">
         <button
-          onClick={() => {
-            setAdminOverride(false);
-            showNotice('Exited Admin Mode.');
-          }}
-          className="px-3.5 py-1.5 bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] rounded-xl text-xs text-white/70 hover:text-white transition-all self-start md:self-auto font-mono"
+          onClick={() => setActiveTab('chat')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold font-mono tracking-wider transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
+            activeTab === 'chat'
+              ? 'bg-white text-black shadow-md'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+          }`}
         >
-          Exit Admin Mode
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>MESSAGES ({conversations.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold font-mono tracking-wider transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
+            activeTab === 'users'
+              ? 'bg-white text-black shadow-md'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>VISITORS DIRECTORY ({allUsers.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('investments')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold font-mono tracking-wider transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
+            activeTab === 'investments'
+              ? 'bg-white text-black shadow-md'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+          }`}
+        >
+          <TrendingUp className="w-3.5 h-3.5" />
+          <span>SPACE INVESTMENTS ({investments.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('requests')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold font-mono tracking-wider transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
+            activeTab === 'requests'
+              ? 'bg-white text-black shadow-md'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>CONNECTIONS ({friendRequests.length})</span>
         </button>
       </div>
 
-      {/* Admin Navigation Tabs (Responsive Scrollable) */}
-      <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 scrollbar-thin">
-        {[
-          { id: 'overview', label: '1. OVERVIEW' },
-          { id: 'investments', label: `2. INVESTMENTS (${investments.length})` },
-          { id: 'requests', label: `3. REQUESTS (${pendingRequests.length})` },
-          { id: 'friends', label: `4. CONNECTIONS (${acceptedFriends.length})` },
-          { id: 'chat', label: `5. MESSAGES (${conversations.length})` },
-          { id: 'images', label: '6. IMAGE ARCHIVE' },
-          { id: 'users', label: `7. VISITORS (${allUsers.length})` },
-          { id: 'blocked', label: `8. BLOCKED (${blockedUserIds.length})` },
-          { id: 'products', label: '9. PRODUCTS' },
-          { id: 'settings', label: '10. SETTINGS' },
-        ].map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all ${
-                isActive
-                  ? 'bg-white text-black font-extrabold shadow-sm'
-                  : 'bg-[#0a0a0a] text-white/60 hover:text-white border border-[#222222] hover:bg-[#141414]'
-              }`}
-            >
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* TAB 1: OVERVIEW METRICS */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-1">
-              <span className="text-[10px] font-mono text-white/40 uppercase block">Space Inquiries</span>
-              <div className="text-xl sm:text-2xl font-black text-white font-mono">{investments.length}</div>
-            </div>
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-1">
-              <span className="text-[10px] font-mono text-white/40 uppercase block">Pending Requests</span>
-              <div className="text-xl sm:text-2xl font-black text-white font-mono">{pendingRequests.length}</div>
-            </div>
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-1">
-              <span className="text-[10px] font-mono text-white/40 uppercase block">Connected Friends</span>
-              <div className="text-xl sm:text-2xl font-black text-white font-mono">{acceptedFriends.length}</div>
-            </div>
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-1">
-              <span className="text-[10px] font-mono text-white/40 uppercase block">Active 1:1 Chats</span>
-              <div className="text-xl sm:text-2xl font-black text-white font-mono">{conversations.length}</div>
-            </div>
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-1">
-              <span className="text-[10px] font-mono text-white/40 uppercase block">Total Visitors</span>
-              <div className="text-xl sm:text-2xl font-black text-white font-mono">{allUsers.length || 1}</div>
-            </div>
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-1">
-              <span className="text-[10px] font-mono text-white/40 uppercase block">Blocked Entities</span>
-              <div className="text-xl sm:text-2xl font-black text-white font-mono">{blockedUserIds.length}</div>
-            </div>
-          </div>
-
-          {/* Quick Shortcuts Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-3">
-              <div className="flex items-center justify-between border-b border-[#1f1f1f] pb-3">
-                <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-                  PENDING FRIEND QUEUE ({pendingRequests.length})
-                </h3>
-                <button
-                  onClick={() => setActiveTab('requests')}
-                  className="text-[10px] text-white/60 hover:text-white font-mono underline"
-                >
-                  Manage All
-                </button>
-              </div>
-              {pendingRequests.length === 0 ? (
-                <p className="text-xs text-white/40 font-mono py-2">No pending requests.</p>
-              ) : (
-                <div className="space-y-2">
-                  {pendingRequests.slice(0, 3).map((r) => (
-                    <div key={r.id} className="p-3 bg-[#111111] rounded-xl border border-[#222222] flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-white">{r.displayName}</div>
-                        {r.note && <div className="text-[10px] text-white/60 line-clamp-1">"{r.note}"</div>}
-                      </div>
-                      <button
-                        onClick={() => handleAccept(r)}
-                        className="px-2.5 py-1 bg-white text-black font-bold text-[10px] rounded uppercase"
-                      >
-                        Accept
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-3">
-              <div className="flex items-center justify-between border-b border-[#1f1f1f] pb-3">
-                <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-                  SPACE INQUIRIES ({investments.length})
-                </h3>
-                <button
-                  onClick={() => setActiveTab('investments')}
-                  className="text-[10px] text-white/60 hover:text-white font-mono underline"
-                >
-                  View All
-                </button>
-              </div>
-              {investments.length === 0 ? (
-                <p className="text-xs text-white/40 font-mono py-2">No inquiries logged yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {investments.slice(0, 3).map((inv) => (
-                    <div key={inv.id} className="p-3 bg-[#111111] rounded-xl border border-[#222222] flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-white">{inv.investorName}</div>
-                        <div className="text-[10px] text-white/60">{inv.targetAmount} • {inv.targetSector}</div>
-                      </div>
-                      <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-white/10 text-white">
-                        {inv.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: SPACE INVESTMENTS WITH SEARCH & FILTER */}
-      {activeTab === 'investments' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#222222] pb-4">
-            <div>
-              <h3 className="text-sm font-bold text-white uppercase font-mono">SPACE CAPITAL ALLOCATION INQUIRIES</h3>
-              <p className="text-xs text-white/50">
-                Live accredited investor submissions from the Space Investment portal.
-              </p>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-mono text-white/40">Total: {filteredInvestments.length}</span>
-            </div>
-          </div>
-
-          {/* Search & Status Filter Controls */}
-          <div className="flex flex-col sm:flex-row items-center gap-2">
-            <div className="relative flex-1 w-full">
-              <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={investmentSearch}
-                onChange={(e) => setInvestmentSearch(e.target.value)}
-                placeholder="Search by investor name, organization, email, or sector..."
-                className="w-full bg-black border border-[#222222] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-white"
-              />
-            </div>
-
-            <div className="flex items-center space-x-1.5 w-full sm:w-auto">
-              <Filter className="w-3.5 h-3.5 text-white/40 shrink-0" />
-              <select
-                value={investmentFilter}
-                onChange={(e) => setInvestmentFilter(e.target.value)}
-                className="bg-black border border-[#222222] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none w-full sm:w-auto"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="SUBMITTED">Submitted</option>
-                <option value="IN_REVIEW">In Review</option>
-                <option value="CONNECTED">Connected</option>
-                <option value="DECLINED">Declined</option>
-              </select>
-            </div>
-          </div>
-
-          {filteredInvestments.length === 0 ? (
-            <div className="py-8 text-center text-xs text-white/40 font-mono">
-              No space capital inquiries matching filters.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredInvestments.map((inv) => (
-                <div
-                  key={inv.id}
-                  className="p-4 sm:p-5 rounded-xl bg-[#111111] border border-[#222222] space-y-3 text-xs"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1f1f1f] pb-3">
-                    <div>
-                      <span className="text-sm font-bold text-white">{inv.investorName}</span>
-                      {inv.organization && (
-                        <span className="text-white/60 ml-2">({inv.organization})</span>
-                      )}
-                      <div className="text-[10px] text-white/40 font-mono">
-                        Classification: {inv.investorType} • Timeline: {inv.timeline || 'Immediate'}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded ${
-                        inv.status === 'CONNECTED'
-                          ? 'bg-white text-black'
-                          : 'bg-white/10 text-white border border-white/20'
-                      }`}>
-                        {inv.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono text-white/70">
-                    <div>
-                      <span className="text-white/40 block">Target Capital Allocation:</span>
-                      <span className="text-white font-bold">{inv.targetAmount}</span>
-                    </div>
-                    <div>
-                      <span className="text-white/40 block">Target Sector:</span>
-                      <span className="text-white font-bold">{inv.targetSector}</span>
-                    </div>
-                    <div>
-                      <span className="text-white/40 block">Correspondence Email:</span>
-                      <a href={`mailto:${inv.email}`} className="text-white underline">{inv.email}</a>
-                    </div>
-                    {inv.phone && (
-                      <div>
-                        <span className="text-white/40 block">Telephone / Signal:</span>
-                        <span className="text-white">{inv.phone}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {inv.notes && (
-                    <div className="p-2.5 bg-black/60 rounded-lg border border-[#222222] text-[11px] text-white/60">
-                      <span className="font-bold text-white block mb-0.5 font-mono text-[10px]">Investor Criteria:</span>
-                      {inv.notes}
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#1f1f1f]">
-                    <span className="text-[10px] text-white/40 font-mono">Action:</span>
-                    <button
-                      onClick={async () => {
-                        await updateInvestmentStatus(inv.id, 'CONNECTED');
-                        showNotice(`Updated inquiry for ${inv.investorName} to CONNECTED.`);
-                      }}
-                      className="px-2.5 py-1 bg-white text-black font-bold text-[10px] rounded uppercase hover:bg-zinc-200 transition-colors"
-                    >
-                      Mark Connected
-                    </button>
-                    <button
-                      onClick={async () => {
-                        await updateInvestmentStatus(inv.id, 'IN_REVIEW');
-                        showNotice(`Updated inquiry for ${inv.investorName} to IN_REVIEW.`);
-                      }}
-                      className="px-2.5 py-1 bg-[#1a1a1a] border border-[#333333] text-white text-[10px] rounded uppercase hover:bg-[#222222] transition-colors"
-                    >
-                      In Review
-                    </button>
-                    <button
-                      onClick={async () => {
-                        await updateInvestmentStatus(inv.id, 'DECLINED');
-                        showNotice(`Updated inquiry for ${inv.investorName} to DECLINED.`);
-                      }}
-                      className="px-2.5 py-1 bg-[#1a1a1a] text-white/50 text-[10px] rounded uppercase hover:text-white transition-colors"
-                    >
-                      Decline
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 3: FRIEND REQUESTS WITH SEARCH & FILTER */}
-      {activeTab === 'requests' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#222222] pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-white uppercase font-mono">FRIEND & CONNECTION REQUESTS</h3>
-              <p className="text-xs text-white/50">Approve or reject visitor requests for 1-on-1 private messaging.</p>
-            </div>
-            <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-mono text-white/40">Count: {filteredRequests.length}</span>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center gap-2">
-            <div className="relative flex-1 w-full">
-              <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={requestSearch}
-                onChange={(e) => setRequestSearch(e.target.value)}
-                placeholder="Search friend requests by name or note..."
-                className="w-full bg-black border border-[#222222] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-white"
-              />
-            </div>
-
-            <select
-              value={requestFilter}
-              onChange={(e) => setRequestFilter(e.target.value)}
-              className="bg-black border border-[#222222] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none w-full sm:w-auto"
-            >
-              <option value="ALL">All Requests</option>
-              <option value="PENDING">Pending Only</option>
-              <option value="ACCEPTED">Accepted Only</option>
-              <option value="REJECTED">Rejected Only</option>
-            </select>
-          </div>
-
-          {filteredRequests.length === 0 ? (
-            <p className="text-xs text-white/40 font-mono py-6 text-center">No matching friend requests found.</p>
-          ) : (
-            <div className="divide-y divide-[#1f1f1f]">
-              {filteredRequests.map((req) => (
-                <div key={req.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-bold text-white">{req.displayName}</span>
-                      <span className="text-[9px] font-mono uppercase px-2 py-0.2 rounded bg-white/10 text-white">
-                        {req.status}
-                      </span>
-                    </div>
-                    {req.note && <p className="text-xs text-white/60 mt-1">"{req.note}"</p>}
-                    <span className="text-[9px] text-white/40 font-mono">
-                      UID: {req.senderId} • Date: {new Date(req.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-
-                  {req.status === 'PENDING' && (
-                    <div className="flex items-center space-x-2 shrink-0">
-                      <button
-                        onClick={() => handleAccept(req)}
-                        className="px-3 py-1 bg-white text-black text-xs font-bold rounded hover:bg-zinc-200 transition-colors"
-                      >
-                        Accept
-                      </button>
-                      <button
-                        onClick={() => handleReject(req)}
-                        className="px-3 py-1 bg-[#1a1a1a] text-white/70 text-xs font-bold rounded hover:bg-[#252525] transition-colors"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 4: ACCEPTED FRIENDS */}
-      {activeTab === 'friends' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase font-mono">ACCEPTED COMMUNITY FRIENDS ({acceptedFriends.length})</h3>
-          {acceptedFriends.length === 0 ? (
-            <p className="text-xs text-white/40 font-mono py-6 text-center">No accepted friends yet.</p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {acceptedFriends.map((f) => (
-                <div key={f.id} className="p-4 rounded-xl bg-[#111111] border border-[#222222] space-y-2">
-                  <div className="flex items-center space-x-3">
-                    <img
-                      src={f.photoURL || `https://api.dicebear.com/7.x/identicon/svg?seed=${f.senderId}`}
-                      alt={f.displayName}
-                      className="w-10 h-10 rounded-full object-cover border border-[#333333]"
-                    />
-                    <div>
-                      <div className="text-xs font-bold text-white">{f.displayName}</div>
-                      <span className="text-[10px] text-white/60 font-mono">Verified Connection</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const conv = conversations.find((c) => c.visitorId === f.senderId);
-                      if (conv) {
-                        setSelectedConversation(conv);
-                        setAdminChatMobileView('chat');
-                      }
-                      setActiveTab('chat');
-                    }}
-                    className="w-full py-1.5 px-3 bg-white text-black rounded text-xs font-bold flex items-center justify-center space-x-1 hover:bg-zinc-200 transition-colors"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>Open 1:1 Conversation</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 5: PRIVATE MESSAGES HUB (With Mobile Switcher) */}
+      {/* TAB 1: PRIVATE MESSAGES HUB (MESSENGER DARK STYLE) */}
       {activeTab === 'chat' && (
-        <div className="bg-[#0a0a0a] border border-[#222222] rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[550px]">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 min-h-[620px]">
+          
           {/* Conversation List Column */}
-          <div className={`md:col-span-4 border-r border-[#222222] bg-black flex flex-col ${
+          <div className={`md:col-span-4 border-r border-zinc-800 bg-zinc-950 flex flex-col ${
             adminChatMobileView === 'chat' ? 'hidden md:flex' : 'flex'
           }`}>
-            <div className="p-3 bg-[#111111] border-b border-[#222222] space-y-2">
-              <div className="text-xs font-bold text-white uppercase font-mono flex justify-between">
-                <span>VISITOR CHATS ({conversations.length})</span>
+            <div className="p-3.5 bg-zinc-900 border-b border-zinc-800 space-y-2">
+              <div className="text-xs font-bold text-white uppercase font-mono flex justify-between items-center">
+                <span>VISITOR INBOX</span>
+                <span className="text-[10px] text-zinc-400 font-mono">{filteredConversations.length} Active</span>
               </div>
               <div className="relative">
-                <Search className="w-3 h-3 text-white/40 absolute left-2.5 top-2" />
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
                 <input
                   type="text"
                   value={chatSearch}
                   onChange={(e) => setChatSearch(e.target.value)}
-                  placeholder="Filter by visitor or message..."
-                  className="w-full bg-black border border-[#222222] rounded pl-7 pr-2 py-1 text-[11px] text-white focus:outline-none focus:border-white"
+                  placeholder="Filter by name, ID, or text..."
+                  className="w-full bg-black border border-zinc-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-white"
                 />
               </div>
             </div>
 
-            <div className="overflow-y-auto flex-1 max-h-[500px] divide-y divide-[#1f1f1f]">
+            <div className="overflow-y-auto flex-1 max-h-[540px] divide-y divide-zinc-900">
               {filteredConversations.length === 0 ? (
-                <p className="p-4 text-xs text-white/40 font-mono">No conversations found.</p>
+                <p className="p-6 text-xs text-zinc-500 font-mono text-center">No visitor conversations yet.</p>
               ) : (
-                filteredConversations.map((c) => (
-                  <div
-                    key={c.id}
-                    onClick={() => {
-                      setSelectedConversation(c);
-                      setAdminChatMobileView('chat');
-                    }}
-                    className={`p-3 cursor-pointer transition-colors ${
-                      selectedConversation?.id === c.id ? 'bg-[#181818] border-l-2 border-white' : 'hover:bg-[#111111]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs font-bold text-white truncate">{c.visitorName}</span>
-                      {c.lastMessageAt && (
-                        <span className="text-[9px] text-white/40 font-mono">
-                          {new Date(c.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                filteredConversations.map((c) => {
+                  const isSelected = selectedConversation?.id === c.id;
+                  const isUnread = (c.unreadCount || 0) > 0;
+
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => {
+                        setSelectedConversation(c);
+                        setAdminChatMobileView('chat');
+                      }}
+                      className={`p-3.5 cursor-pointer transition-colors ${
+                        isSelected 
+                          ? 'bg-zinc-900 border-l-4 border-white shadow-sm' 
+                          : 'hover:bg-zinc-900/60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-xs truncate ${isUnread ? 'font-black text-white' : 'font-bold text-zinc-200'}`}>
+                          {c.visitorName}
                         </span>
-                      )}
+                        {c.lastMessageAt && (
+                          <span className="text-[9px] text-zinc-500 font-mono shrink-0">
+                            {new Date(c.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-zinc-400 truncate font-mono">
+                        {c.lastMessage}
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[9px] text-zinc-500 font-mono">
+                        <span>UID: {c.visitorId.slice(0, 10)}...</span>
+                        {isUnread && (
+                          <span className="px-1.5 py-0.2 bg-white text-black font-bold rounded-full text-[8px]">
+                            NEW
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-[10px] text-white/50 truncate font-mono">{c.lastMessage}</div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
 
           {/* Active Chat Column */}
-          <div className={`md:col-span-8 flex flex-col bg-[#0a0a0a] ${
+          <div className={`md:col-span-8 flex flex-col bg-black ${
             adminChatMobileView === 'list' ? 'hidden md:flex' : 'flex'
           }`}>
             {selectedConversation ? (
               <>
-                <div className="p-3 bg-[#111111] border-b border-[#222222] flex items-center justify-between text-xs font-bold text-white">
+                {/* Thread Top Bar */}
+                <div className="p-3.5 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between text-xs font-bold text-white">
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => setAdminChatMobileView('list')}
-                      className="md:hidden p-1 text-white/70 hover:text-white"
+                      className="md:hidden p-1 text-zinc-400 hover:text-white cursor-pointer"
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </button>
-                    <span>Chatting with: {selectedConversation.visitorName}</span>
+                    <span className="font-bold text-sm text-white">{selectedConversation.visitorName}</span>
+                    <span className="text-[10px] font-mono text-zinc-400">({selectedConversation.visitorId})</span>
                   </div>
-                  <span className="text-[10px] font-mono text-white/50">UID: {selectedConversation.visitorId.slice(0, 8)}</span>
+                  <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center space-x-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>1:1 Channel Connected</span>
+                  </span>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[420px]">
+                {/* Messages Stream */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[460px] bg-black">
                   {chatMessages.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-white/40 font-mono">
+                    <div className="py-12 text-center text-xs text-zinc-500 font-mono">
                       No messages recorded in this channel yet.
                     </div>
                   ) : (
                     chatMessages.map((m) => {
                       const isStaff = m.senderId === user?.uid || m.senderId === 'admin';
                       return (
-                        <div key={m.id} className={`flex flex-col ${isStaff ? 'items-end' : 'items-start'}`}>
-                          <div className="text-[9px] text-white/40 mb-0.5 font-mono">
-                            {isStaff ? 'Admin' : selectedConversation.visitorName} • {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        <div key={m.id} className={`flex flex-col ${isStaff ? 'items-end' : 'items-start'} group relative`}>
+                          <div className="text-[9px] text-zinc-500 mb-0.5 font-mono px-1">
+                            {isStaff ? 'Elon Musk Space Admin' : selectedConversation.visitorName} • {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </div>
-                          <div className={`p-3 rounded-xl text-xs max-w-sm ${
-                            isStaff ? 'bg-white text-black font-medium' : 'bg-[#181818] text-white border border-[#262626]'
-                          }`}>
-                            {m.imageUrl && (
-                              <img src={m.imageUrl} alt="attachment" className="rounded-lg mb-2 max-h-48 object-cover grayscale" />
-                            )}
-                            <p className="whitespace-pre-wrap">{m.text}</p>
+
+                          <div className="flex items-center max-w-sm sm:max-w-md">
+                            <div className={`p-3.5 rounded-2xl text-xs shadow-md ${
+                              isStaff 
+                                ? 'bg-white text-black font-medium rounded-br-none' 
+                                : 'bg-zinc-900 text-white border border-zinc-800 rounded-bl-none'
+                            }`}>
+                              {/* Reply Context */}
+                              {m.replyTo && (
+                                <div className={`mb-2 p-1.5 rounded text-[10px] border-l-2 ${
+                                  isStaff ? 'bg-zinc-200 border-black text-zinc-800' : 'bg-zinc-800 border-white text-zinc-300'
+                                }`}>
+                                  <span className="font-bold block text-[9px]">Replying to {m.replyTo.senderName}</span>
+                                  <span className="italic line-clamp-1">{m.replyTo.text}</span>
+                                </div>
+                              )}
+
+                              {m.imageUrl && (
+                                <SafeImage src={m.imageUrl} alt="attachment" className="rounded-xl mb-2 max-h-56 object-cover border border-zinc-800" fallbackText="IMG" />
+                              )}
+                              <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
+                              
+                              {/* Read receipt indicator */}
+                              {isStaff && (
+                                <div className="flex justify-end mt-1 text-[8px] text-zinc-600 font-mono">
+                                  {m.read ? '✓✓ Read' : '✓ Sent'}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions on hover */}
+                            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 ml-2 transition-opacity">
+                              <button
+                                onClick={() => setAdminReplyTo(m)}
+                                className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 cursor-pointer"
+                                title="Reply to message"
+                              >
+                                <Reply className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => deleteMessage(m.id, selectedConversation.id)}
+                                className="p-1 rounded bg-red-950/80 hover:bg-red-900 text-red-300 cursor-pointer"
+                                title="Delete message"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -826,97 +568,155 @@ export const AdminView: React.FC<AdminViewProps> = () => {
                   )}
                 </div>
 
-                <form onSubmit={handleSendAdminReply} className="p-3 bg-[#111111] border-t border-[#222222] flex space-x-2">
+                {/* Quoted Reply Banner */}
+                {adminReplyTo && (
+                  <div className="px-4 py-2 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between text-xs">
+                    <div className="flex items-center space-x-2 text-zinc-300">
+                      <CornerDownRight className="w-3.5 h-3.5 text-white" />
+                      <span className="text-[11px] font-bold">Replying to {adminReplyTo.senderName}:</span>
+                      <span className="text-[11px] italic truncate text-zinc-400">"{adminReplyTo.text}"</span>
+                    </div>
+                    <button onClick={() => setAdminReplyTo(null)} className="text-zinc-400 hover:text-white cursor-pointer">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Reply Form */}
+                <form onSubmit={handleSendAdminReply} className="p-3 bg-zinc-950 border-t border-zinc-800 flex space-x-2">
                   <input
                     type="text"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
-                    placeholder={`Reply to ${selectedConversation.visitorName}...`}
-                    className="flex-1 bg-black border border-[#222222] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-white"
+                    placeholder={`Reply privately to ${selectedConversation.visitorName}...`}
+                    className="flex-1 bg-black border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white"
                   />
                   <button
                     type="submit"
                     disabled={isSendingReply || !replyText.trim()}
-                    className="px-4 py-2 bg-white text-black font-bold text-xs rounded-lg hover:bg-zinc-200 transition-colors disabled:opacity-40"
+                    className="px-5 py-2 bg-white text-black font-bold text-xs rounded-xl hover:bg-zinc-200 transition-colors disabled:opacity-40 shadow-sm cursor-pointer"
                   >
                     Reply
                   </button>
                 </form>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-xs text-white/40 font-mono p-8">
-                Select a conversation on the left.
+              <div className="flex-1 flex items-center justify-center text-xs text-zinc-500 font-mono p-8">
+                Select a conversation on the left to start replying.
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* TAB 6: IMAGE ARCHIVE */}
-      {activeTab === 'images' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase font-mono">TRANSMITTED PHOTOGRAPHS ARCHIVE</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
-            {chatMessages.filter((m) => m.imageUrl).length === 0 ? (
-              <p className="text-xs text-white/40 font-mono col-span-4 py-6 text-center">No image attachments in active conversation.</p>
-            ) : (
-              chatMessages.filter((m) => m.imageUrl).map((m) => (
-                <div key={m.id} className="rounded-xl overflow-hidden border border-[#222222] bg-black">
-                  <img src={m.imageUrl} alt="attachment" className="w-full h-36 object-cover grayscale opacity-90 hover:opacity-100 transition-opacity" />
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 7: VISITORS WITH SEARCH */}
+      {/* TAB 2: VISITORS DIRECTORY */}
       {activeTab === 'users' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#222222] pb-3">
-            <h3 className="text-sm font-bold text-white uppercase font-mono">
-              REGISTERED VISITORS ({filteredUsers.length})
-            </h3>
+        <div className="p-6 rounded-3xl bg-zinc-900 border border-zinc-800 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase font-mono">
+                REGISTERED VISITORS DIRECTORY ({filteredUsers.length})
+              </h3>
+              <p className="text-xs text-zinc-400">All authenticated visitors with permanent user IDs and online presence.</p>
+            </div>
             <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
               <input
                 type="text"
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
                 placeholder="Search visitors..."
-                className="w-full bg-black border border-[#222222] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-white"
+                className="w-full bg-black border border-zinc-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white"
               />
             </div>
           </div>
 
-          <div className="divide-y divide-[#1f1f1f]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
             {filteredUsers.map((u) => {
               const isBlocked = blockedUserIds.includes(u.uid);
+
               return (
-                <div key={u.uid} className="py-3 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-bold text-white">{u.displayName}</span>
-                    <span className="text-[10px] text-white/40 font-mono ml-2">UID: {u.uid}</span>
+                <div
+                  key={u.uid}
+                  className="p-4 rounded-2xl bg-black border border-zinc-800 flex flex-col justify-between space-y-3"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="relative">
+                        <SafeImage
+                          src={u.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName || 'V')}&background=18181b&color=ffffff`}
+                          alt={u.displayName}
+                          className="w-10 h-10 rounded-full object-cover border border-zinc-800 bg-zinc-950"
+                          fallbackText={(u.displayName || 'V').slice(0, 2).toUpperCase()}
+                        />
+                        <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-black ${
+                          u.online ? 'bg-emerald-400' : 'bg-zinc-600'
+                        }`}></span>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white flex items-center space-x-1.5">
+                          <span>{u.displayName}</span>
+                          {u.role === 'admin' && (
+                            <span className="px-1.5 py-0.2 rounded text-[8px] bg-white text-black font-mono font-bold uppercase">ADMIN</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-zinc-400 font-mono truncate max-w-[150px]">
+                          {u.email || u.uid}
+                        </div>
+                      </div>
+                    </div>
+
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                      u.online ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800' : 'bg-zinc-800 text-zinc-400'
+                    }`}>
+                      {u.online ? 'ONLINE' : 'OFFLINE'}
+                    </span>
                   </div>
 
-                  <div>
+                  <div className="text-[10px] text-zinc-400 font-mono space-y-0.5 border-t border-zinc-800 pt-2">
+                    <div>Permanent UID: <span className="text-white font-bold">{u.uid}</span></div>
+                    {u.lastSeen && (
+                      <div>Last active: {new Date(u.lastSeen).toLocaleString()}</div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-2 pt-1">
+                    <button
+                      onClick={() => {
+                        const existingConv = conversations.find((c) => c.visitorId === u.uid);
+                        if (existingConv) {
+                          setSelectedConversation(existingConv);
+                        } else {
+                          setSelectedConversation({
+                            id: `conv_${u.uid}_admin`,
+                            conversationId: `conv_${u.uid}_admin`,
+                            participants: [u.uid, 'admin'],
+                            visitorId: u.uid,
+                            visitorName: u.displayName,
+                            visitorPhoto: u.photoURL,
+                            adminId: 'admin',
+                            createdAt: new Date().toISOString(),
+                          });
+                        }
+                        setActiveTab('chat');
+                      }}
+                      className="flex-1 py-1.5 px-3 bg-white hover:bg-zinc-200 text-black rounded-xl text-xs font-bold flex items-center justify-center space-x-1 shadow-sm cursor-pointer transition-all"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Chat 1-on-1</span>
+                    </button>
+
                     {isBlocked ? (
                       <button
-                        onClick={async () => {
-                          await unblockUser(u.uid);
-                          showNotice(`Unblocked visitor ${u.displayName}.`);
-                        }}
-                        className="px-3 py-1 bg-white text-black text-xs font-bold rounded hover:bg-zinc-200"
+                        onClick={() => unblockUser(u.uid)}
+                        className="py-1.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-bold cursor-pointer"
                       >
                         Unblock
                       </button>
                     ) : (
                       <button
-                        onClick={async () => {
-                          await blockUser(u.uid);
-                          showNotice(`Blocked visitor ${u.displayName}.`);
-                        }}
-                        className="px-3 py-1 bg-[#1a1a1a] text-white/70 text-xs font-bold rounded hover:text-white"
+                        onClick={() => blockUser(u.uid)}
+                        className="py-1.5 px-3 border border-red-900/80 text-red-400 hover:bg-red-950 rounded-xl text-xs font-bold cursor-pointer"
                       >
                         Block
                       </button>
@@ -929,62 +729,164 @@ export const AdminView: React.FC<AdminViewProps> = () => {
         </div>
       )}
 
-      {/* TAB 8: BLOCKED USERS */}
-      {activeTab === 'blocked' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase font-mono">BLOCKED ENTITIES ({blockedUserIds.length})</h3>
-          {blockedUserIds.length === 0 ? (
-            <p className="text-xs text-white/40 font-mono py-6 text-center">No blocked users.</p>
-          ) : (
-            <div className="divide-y divide-[#1f1f1f]">
-              {blockedUserIds.map((uid) => (
-                <div key={uid} className="py-3 flex items-center justify-between text-xs">
-                  <span className="font-mono text-white/70">UID: {uid}</span>
-                  <button
-                    onClick={async () => {
-                      await unblockUser(uid);
-                      showNotice(`Unblocked user ${uid}.`);
-                    }}
-                    className="px-3 py-1 bg-white text-black text-xs font-bold rounded hover:bg-zinc-200"
-                  >
-                    Unblock
-                  </button>
-                </div>
-              ))}
+      {/* TAB 3: SPACE CAPITAL INVESTMENTS */}
+      {activeTab === 'investments' && (
+        <div className="p-6 rounded-3xl bg-zinc-900 border border-zinc-800 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase font-mono">
+                SPACE CAPITAL INQUIRIES ({filteredInvestments.length})
+              </h3>
+              <p className="text-xs text-zinc-400">Accredited investor syndicates for orbital infrastructure and Starship scaling.</p>
             </div>
-          )}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={investmentSearch}
+                onChange={(e) => setInvestmentSearch(e.target.value)}
+                placeholder="Search investors or sectors..."
+                className="bg-black border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white"
+              />
+              <select
+                value={investmentFilter}
+                onChange={(e) => setInvestmentFilter(e.target.value)}
+                className="bg-black border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-white"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="SUBMITTED">Submitted</option>
+                <option value="IN_REVIEW">In Review</option>
+                <option value="CONNECTED">Connected</option>
+                <option value="DECLINED">Declined</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            {filteredInvestments.length === 0 ? (
+              <p className="text-center py-8 text-xs text-zinc-500 font-mono">No investment inquiries matching filters.</p>
+            ) : (
+              filteredInvestments.map((inv) => (
+                <div key={inv.id} className="p-5 rounded-2xl bg-black border border-zinc-800 space-y-3 text-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+                    <div>
+                      <span className="text-sm font-bold text-white">{inv.investorName}</span>
+                      {inv.organization && <span className="text-zinc-400 ml-2">({inv.organization})</span>}
+                      <div className="text-[10px] text-zinc-500 font-mono">
+                        Classification: {inv.investorType} • Timeline: {inv.timeline || 'Immediate'}
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-white text-black">
+                      {inv.status}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono text-zinc-300">
+                    <div><span className="text-zinc-500 block">Target Capital Allocation:</span> <span className="text-white font-bold">{inv.targetAmount}</span></div>
+                    <div><span className="text-zinc-500 block">Target Sector:</span> <span className="text-white font-bold">{inv.targetSector}</span></div>
+                    <div><span className="text-zinc-500 block">Email:</span> <a href={`mailto:${inv.email}`} className="text-white underline">{inv.email}</a></div>
+                    {inv.phone && <div><span className="text-zinc-500 block">Phone:</span> {inv.phone}</div>}
+                  </div>
+
+                  {inv.notes && (
+                    <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 text-[11px] text-zinc-300">
+                      <span className="font-bold text-white block mb-0.5 font-mono text-[10px]">Investor Notes:</span>
+                      {inv.notes}
+                    </div>
+                  )}
+
+                  <div className="flex items-center space-x-2 pt-2 border-t border-zinc-800">
+                    <span className="text-[10px] text-zinc-500 font-mono">Status Action:</span>
+                    <button
+                      onClick={async () => {
+                        await updateInvestmentStatus(inv.id, 'CONNECTED');
+                        showNotice(`Updated inquiry for ${inv.investorName} to CONNECTED.`);
+                      }}
+                      className="px-3 py-1 bg-white text-black font-bold text-[10px] rounded-lg uppercase hover:bg-zinc-200 cursor-pointer"
+                    >
+                      Connect
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await updateInvestmentStatus(inv.id, 'IN_REVIEW');
+                        showNotice(`Updated inquiry for ${inv.investorName} to IN_REVIEW.`);
+                      }}
+                      className="px-3 py-1 bg-zinc-800 text-white font-bold text-[10px] rounded-lg uppercase hover:bg-zinc-700 cursor-pointer"
+                    >
+                      In Review
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await updateInvestmentStatus(inv.id, 'DECLINED');
+                        showNotice(`Updated inquiry for ${inv.investorName} to DECLINED.`);
+                      }}
+                      className="px-3 py-1 bg-red-950 text-red-300 border border-red-900 font-bold text-[10px] rounded-lg uppercase hover:bg-red-900 cursor-pointer"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
 
-      {/* TAB 9: PRODUCTS */}
-      {activeTab === 'products' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase font-mono">MARKETPLACE PRODUCTS ({PRODUCTS_DATA.length})</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-            {PRODUCTS_DATA.map((p) => (
-              <div key={p.id} className="p-4 rounded-xl bg-[#111111] border border-[#222222] space-y-2">
-                <img src={p.imageUrl} alt={p.name} className="w-full h-28 object-cover rounded-lg grayscale" />
-                <div className="text-xs font-bold text-white">{p.name}</div>
-                <div className="text-[10px] text-white/50 font-mono">{p.company} • {p.category}</div>
+      {/* TAB 4: CONNECTIONS & BADGE REQUESTS */}
+      {activeTab === 'requests' && (
+        <div className="p-6 rounded-3xl bg-zinc-900 border border-zinc-800 space-y-4 shadow-xl">
+          <h3 className="text-sm font-bold text-white uppercase font-mono">
+            COMMUNITY CONNECTION REQUESTS ({friendRequests.length})
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+            {friendRequests.map((req) => (
+              <div key={req.id} className="p-4 rounded-2xl bg-black border border-zinc-800 space-y-3">
+                <div className="flex items-center space-x-3">
+                  <SafeImage
+                    src={req.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(req.displayName || 'U')}&background=18181b&color=ffffff`}
+                    alt={req.displayName}
+                    className="w-10 h-10 rounded-full object-cover border border-zinc-800 bg-zinc-950"
+                    fallbackText={(req.displayName || 'U').slice(0, 2).toUpperCase()}
+                  />
+                  <div>
+                    <div className="text-xs font-bold text-white">{req.displayName}</div>
+                    <span className="text-[10px] text-zinc-400 font-mono">Status: {req.status}</span>
+                  </div>
+                </div>
+
+                {req.note && (
+                  <p className="text-[11px] text-zinc-300 bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
+                    "{req.note}"
+                  </p>
+                )}
+
+                {req.status === 'PENDING' ? (
+                  <div className="flex space-x-2 pt-1">
+                    <button
+                      onClick={async () => {
+                        await acceptFriendRequest(req);
+                        showNotice(`Accepted badge request from ${req.displayName}`);
+                      }}
+                      className="flex-1 py-1.5 bg-white text-black rounded-xl text-xs font-bold hover:bg-zinc-200 cursor-pointer transition-all"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await rejectFriendRequest(req);
+                        showNotice(`Declined request from ${req.displayName}`);
+                      }}
+                      className="py-1.5 px-3 bg-zinc-800 text-white rounded-xl text-xs font-bold hover:bg-zinc-700 cursor-pointer"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-[10px] font-mono text-zinc-500">
+                    Processed: {req.status}
+                  </div>
+                )}
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 10: SETTINGS */}
-      {activeTab === 'settings' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#0a0a0a] border border-[#222222] space-y-4 text-xs">
-          <h3 className="text-sm font-bold text-white uppercase font-mono">PLATFORM SETTINGS & DISCLOSURES</h3>
-          <div className="p-4 rounded-xl bg-[#111111] border border-[#222222] space-y-2">
-            <span className="font-bold text-white">Visual Design Constitution:</span>
-            <p className="text-white/60">Strictly Black & Small White High-Contrast Monochrome Aesthetic.</p>
-          </div>
-          <div className="p-4 rounded-xl bg-[#111111] border border-[#222222] space-y-2">
-            <span className="font-bold text-white">Platform Independence:</span>
-            <p className="text-white/60">
-              "ELON MUSK SPACE is an independent technology information and community platform. It is not officially affiliated with Elon Musk or his companies."
-            </p>
           </div>
         </div>
       )}

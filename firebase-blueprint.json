@@ -63,6 +63,9 @@
         "imageUrl": { "type": "string", "maxLength": 2048 },
         "messageType": { "type": "string", "enum": ["text", "image"] },
         "read": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["sent", "delivered", "read"] },
+        "deliveredAt": { "type": "string" },
+        "readAt": { "type": "string" },
         "createdAt": { "type": "string" }
       },
       "required": ["conversationId", "senderId", "receiverId"]

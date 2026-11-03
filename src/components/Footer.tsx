@@ -13,29 +13,29 @@ export const Footer: React.FC<FooterProps> = ({
   onSelectCompany,
 }) => {
   return (
-    <footer className="bg-black border-t border-[#1f1f1f] text-white/50 pt-16 pb-12">
+    <footer className="bg-black border-t border-zinc-900 text-zinc-400 pt-16 pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Top Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12 pb-12 border-b border-[#1f1f1f]">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12 pb-12 border-b border-zinc-900">
           
           {/* Brand Col */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-lg bg-[#0a0a0a] border border-[#222222] flex items-center justify-center text-white">
+              <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-white shadow-sm">
                 <Rocket className="w-4 h-4" />
               </div>
               <div className="flex items-center space-x-1.5">
                 <span className="font-black tracking-widest text-white text-base">ELON MUSK</span>
-                <span className="font-extrabold tracking-widest text-white/80 text-base">SPACE</span>
+                <span className="font-extrabold tracking-widest text-zinc-400 text-base">SPACE</span>
               </div>
             </div>
 
-            <p className="text-[11px] text-white/60 leading-relaxed max-w-sm">
+            <p className="text-[11px] text-zinc-400 leading-relaxed max-w-sm">
               Explore Innovation. Discover Technology. Connect with the Future. An independent technology marketplace, aerospace directory, space capital syndicate, and verified private community platform.
             </p>
 
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/5 border border-white/20 text-white text-[10px] font-mono">
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-300 text-[10px] font-mono">
               <Shield className="w-3 h-3 text-white" />
               <span>VERIFIED INDEPENDENT COMMUNITY</span>
             </div>
@@ -50,7 +50,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <button
                   onClick={() => setCurrentView('home')}
-                  className="hover:text-white transition-colors text-white/60"
+                  className="hover:text-white transition-colors text-zinc-400 cursor-pointer"
                 >
                   Homepage
                 </button>
@@ -58,7 +58,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <button
                   onClick={() => setCurrentView('investment')}
-                  className="hover:text-white transition-colors text-white font-semibold flex items-center space-x-1"
+                  className="hover:text-white transition-colors text-white font-semibold flex items-center space-x-1 cursor-pointer"
                 >
                   <span>Investment for the Space</span>
                   <span className="text-[8px] bg-white text-black font-extrabold px-1 rounded">NEW</span>
@@ -67,7 +67,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <button
                   onClick={() => setCurrentView('companies')}
-                  className="hover:text-white transition-colors text-white/60"
+                  className="hover:text-white transition-colors text-zinc-400 cursor-pointer"
                 >
                   Company Directory
                 </button>
@@ -75,7 +75,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <button
                   onClick={() => setCurrentView('products')}
-                  className="hover:text-white transition-colors text-white/60"
+                  className="hover:text-white transition-colors text-zinc-400 cursor-pointer"
                 >
                   Technology Marketplace
                 </button>
@@ -83,7 +83,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <button
                   onClick={() => setCurrentView('technology')}
-                  className="hover:text-white transition-colors text-white/60"
+                  className="hover:text-white transition-colors text-zinc-400 cursor-pointer"
                 >
                   Engineering Deep-Dives
                 </button>
@@ -91,7 +91,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <button
                   onClick={() => setCurrentView('community')}
-                  className="hover:text-white transition-colors text-white/60"
+                  className="hover:text-white transition-colors text-zinc-400 cursor-pointer"
                 >
                   Community & Friend Network
                 </button>
@@ -99,7 +99,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <button
                   onClick={() => setCurrentView('messages')}
-                  className="hover:text-white transition-colors text-white/60"
+                  className="hover:text-white transition-colors text-white font-bold cursor-pointer"
                 >
                   Private 1:1 Messaging
                 </button>
@@ -117,7 +117,7 @@ export const Footer: React.FC<FooterProps> = ({
                 <li key={c.id}>
                   <button
                     onClick={() => onSelectCompany(c.id)}
-                    className="hover:text-white text-white/60 transition-colors"
+                    className="hover:text-white text-zinc-400 transition-colors cursor-pointer"
                   >
                     {c.name}
                   </button>
@@ -126,7 +126,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <button
                   onClick={() => onSelectCompany('solarcity')}
-                  className="hover:text-white text-white/40 transition-colors text-[10px] font-mono"
+                  className="hover:text-white text-zinc-500 transition-colors text-[10px] font-mono cursor-pointer"
                 >
                   SolarCity (Historical)
                 </button>
@@ -145,10 +145,10 @@ export const Footer: React.FC<FooterProps> = ({
                   href="https://www.spacex.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:text-white text-white/60 flex items-center space-x-1 transition-colors"
+                  className="hover:text-white text-zinc-400 flex items-center space-x-1 transition-colors"
                 >
                   <span>SpaceX.com</span>
-                  <ExternalLink className="w-2.5 h-2.5 text-white/40" />
+                  <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
                 </a>
               </li>
               <li>
@@ -156,10 +156,10 @@ export const Footer: React.FC<FooterProps> = ({
                   href="https://www.tesla.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:text-white text-white/60 flex items-center space-x-1 transition-colors"
+                  className="hover:text-white text-zinc-400 flex items-center space-x-1 transition-colors"
                 >
                   <span>Tesla.com</span>
-                  <ExternalLink className="w-2.5 h-2.5 text-white/40" />
+                  <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
                 </a>
               </li>
               <li>
@@ -167,10 +167,10 @@ export const Footer: React.FC<FooterProps> = ({
                   href="https://www.starlink.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:text-white text-white/60 flex items-center space-x-1 transition-colors"
+                  className="hover:text-white text-zinc-400 flex items-center space-x-1 transition-colors"
                 >
                   <span>Starlink.com</span>
-                  <ExternalLink className="w-2.5 h-2.5 text-white/40" />
+                  <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
                 </a>
               </li>
               <li>
@@ -178,10 +178,10 @@ export const Footer: React.FC<FooterProps> = ({
                   href="https://x.ai/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:text-white text-white/60 flex items-center space-x-1 transition-colors"
+                  className="hover:text-white text-zinc-400 flex items-center space-x-1 transition-colors"
                 >
                   <span>xAI.com</span>
-                  <ExternalLink className="w-2.5 h-2.5 text-white/40" />
+                  <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
                 </a>
               </li>
               <li>
@@ -189,10 +189,10 @@ export const Footer: React.FC<FooterProps> = ({
                   href="https://x.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:text-white text-white/60 flex items-center space-x-1 transition-colors"
+                  className="hover:text-white text-zinc-400 flex items-center space-x-1 transition-colors"
                 >
                   <span>X.com</span>
-                  <ExternalLink className="w-2.5 h-2.5 text-white/40" />
+                  <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
                 </a>
               </li>
               <li>
@@ -200,10 +200,10 @@ export const Footer: React.FC<FooterProps> = ({
                   href="https://neuralink.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:text-white text-white/60 flex items-center space-x-1 transition-colors"
+                  className="hover:text-white text-zinc-400 flex items-center space-x-1 transition-colors"
                 >
                   <span>Neuralink.com</span>
-                  <ExternalLink className="w-2.5 h-2.5 text-white/40" />
+                  <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
                 </a>
               </li>
               <li>
@@ -211,10 +211,10 @@ export const Footer: React.FC<FooterProps> = ({
                   href="https://www.boringcompany.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:text-white text-white/60 flex items-center space-x-1 transition-colors"
+                  className="hover:text-white text-zinc-400 flex items-center space-x-1 transition-colors"
                 >
                   <span>TheBoringCompany.com</span>
-                  <ExternalLink className="w-2.5 h-2.5 text-white/40" />
+                  <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
                 </a>
               </li>
             </ul>
@@ -224,23 +224,23 @@ export const Footer: React.FC<FooterProps> = ({
 
         {/* Bottom Mandatory Legal Disclaimer & Statement */}
         <div className="pt-8 space-y-4">
-          <div className="p-4 rounded-xl bg-[#0a0a0a] border border-[#222222] text-[10px] leading-relaxed text-white/50 font-mono">
+          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-900 text-[10px] leading-relaxed text-zinc-400 font-mono">
             <span className="font-bold text-white block mb-0.5">
               INDEPENDENT EDITORIAL AND COMMUNITY DISCLAIMER:
             </span>
             "ELON MUSK SPACE is an independent technology information and community platform. It is not officially affiliated with Elon Musk or his companies." Trademarks, logos, and product names (including Tesla, SpaceX, Starlink, xAI, X, Neuralink, and The Boring Company) are the property of their respective owners and are referenced solely for nominative and educational purposes.
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-white/40 pt-2 font-mono">
+          <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-zinc-500 pt-2 font-mono">
             <div>
               © {new Date().getFullYear()} ELON MUSK SPACE. All rights reserved.
             </div>
             <div className="flex items-center space-x-3 mt-2 sm:mt-0 text-[10px]">
-              <span>Monochrome High-Contrast</span>
+              <span>Premium Dark Architecture</span>
               <span>•</span>
-              <span>Firestore Real-Time</span>
+              <span>Firestore Real-Time Sync</span>
               <span>•</span>
-              <span>Multiplanetary Fleet</span>
+              <span>Multiplanetary Technology</span>
             </div>
           </div>
         </div>

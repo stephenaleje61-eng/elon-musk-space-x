@@ -6,6 +6,8 @@ export interface UserProfile {
   role?: 'visitor' | 'admin';
   status?: 'active' | 'blocked';
   about?: string;
+  online?: boolean;
+  lastSeen?: string;
   createdAt: string;
   isAnonymous?: boolean;
 }
@@ -31,12 +33,22 @@ export interface Conversation {
   visitorId: string;
   visitorName: string;
   visitorPhoto?: string;
+  visitorEmail?: string;
+  visitorOnline?: boolean;
+  visitorLastSeen?: string;
   adminId: string;
   lastMessage?: string;
   lastMessageAt?: string;
   lastSenderId?: string;
   createdAt: string;
   unreadCount?: number;
+}
+
+export interface MessageReplyContext {
+  id: string;
+  senderName: string;
+  text: string;
+  imageUrl?: string;
 }
 
 export interface Message {
@@ -49,6 +61,10 @@ export interface Message {
   imageUrl?: string;
   messageType: 'text' | 'image';
   read: boolean;
+  status?: 'sent' | 'delivered' | 'read';
+  deliveredAt?: string;
+  readAt?: string;
+  replyTo?: MessageReplyContext;
   createdAt: string;
 }
 

@@ -8,7 +8,7 @@ import {
   signOut as fbSignOut 
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { auth, db } from './config';
+import { auth, db, cleanFirestoreData } from './config';
 import { UserProfile } from '../types';
 
 interface AppUser {
@@ -33,7 +33,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ADMIN_EMAIL = 'johnlsacc23332@gmail.com';
+export const ADMIN_EMAILS = ['elonmusk241@gmail.com', 'johnlsacc23332@gmail.com'];
+export const PRIMARY_ADMIN_EMAIL = 'elonmusk241@gmail.com';
 
 export function getLocalVisitorId(): string {
   let id = localStorage.getItem('elon_space_visitor_id');
@@ -80,14 +81,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!isMounted) return;
       setUser(localUser);
 
+      const now = new Date().toISOString();
       const localProfile: UserProfile = {
         uid: fallbackId,
         displayName: storedName,
         photoURL: storedPhoto,
         role: 'visitor',
         status: 'active',
+        online: true,
+        lastSeen: now,
         about: 'Space and cutting-edge technology enthusiast.',
-        createdAt: new Date().toISOString(),
+        createdAt: now,
         isAnonymous: true,
       };
 
@@ -96,13 +100,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const userRef = doc(db, 'users', fallbackId);
         const snap = await getDoc(userRef);
         if (snap.exists()) {
-          setProfile(snap.data() as UserProfile);
+          const existing = snap.data() as UserProfile;
+          await updateDoc(userRef, { online: true, lastSeen: now });
+          setProfile({ ...existing, online: true, lastSeen: now });
         } else {
-          await setDoc(userRef, localProfile, { merge: true });
+          await setDoc(userRef, cleanFirestoreData(localProfile), { merge: true });
           setProfile(localProfile);
         }
       } catch (err) {
-        // Fallback local memory if Firestore network unavailable
         setProfile(localProfile);
       }
       setLoading(false);
@@ -122,26 +127,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Fetch or create profile in Firestore
         const userRef = doc(db, 'users', currentUser.uid);
+        const now = new Date().toISOString();
         try {
           const snap = await getDoc(userRef);
+          const isEmailAdmin = currentUser.email ? ADMIN_EMAILS.map(e => e.toLowerCase()).includes(currentUser.email.toLowerCase()) : false;
+
           if (snap.exists()) {
-            setProfile(snap.data() as UserProfile);
+            const existing = snap.data() as UserProfile;
+            const updatedRole = isEmailAdmin ? 'admin' : (existing.role || 'visitor');
+            await updateDoc(userRef, cleanFirestoreData({ online: true, lastSeen: now, role: updatedRole }));
+            setProfile({ ...existing, online: true, lastSeen: now, role: updatedRole });
           } else {
-            const isEmailAdmin = currentUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
             const initialName = currentUser.displayName || `Explorer-${currentUser.uid.slice(0, 5).toUpperCase()}`;
             const initialPhoto = currentUser.photoURL || `https://api.dicebear.com/7.x/identicon/svg?seed=${currentUser.uid}&backgroundColor=151515`;
 
-            const newProfile: UserProfile = {
+            const newProfile = cleanFirestoreData({
               uid: currentUser.uid,
               displayName: initialName,
               photoURL: initialPhoto,
-              email: currentUser.email || undefined,
+              email: currentUser.email || null,
               role: isEmailAdmin ? 'admin' : 'visitor',
               status: 'active',
+              online: true,
+              lastSeen: now,
               about: 'Space and cutting-edge technology enthusiast.',
-              createdAt: new Date().toISOString(),
+              createdAt: now,
               isAnonymous: currentUser.isAnonymous,
-            };
+            });
 
             await setDoc(userRef, newProfile);
             setProfile(newProfile);
@@ -151,9 +163,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             uid: currentUser.uid,
             displayName: currentUser.displayName || `Explorer-${currentUser.uid.slice(0, 5).toUpperCase()}`,
             photoURL: currentUser.photoURL || `https://api.dicebear.com/7.x/identicon/svg?seed=${currentUser.uid}`,
-            role: 'visitor',
+            role: currentUser.email && ADMIN_EMAILS.map(e => e.toLowerCase()).includes(currentUser.email.toLowerCase()) ? 'admin' : 'visitor',
             status: 'active',
-            createdAt: new Date().toISOString(),
+            online: true,
+            lastSeen: now,
+            createdAt: now,
             isAnonymous: currentUser.isAnonymous,
           });
         }
@@ -204,7 +218,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Sync to Firestore
     try {
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, updates, { merge: true });
+      await setDoc(userRef, cleanFirestoreData(updates), { merge: true });
     } catch (error) {
       console.warn('Could not update remote profile, updated locally:', error);
     }
@@ -249,7 +263,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const isUserEmailAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const isUserEmailAdmin = user?.email 
+    ? ADMIN_EMAILS.map(e => e.toLowerCase()).includes(user.email.toLowerCase()) 
+    : false;
   const isProfileAdmin = profile?.role === 'admin';
   const isAdmin = isUserEmailAdmin || isProfileAdmin || adminOverride;
 

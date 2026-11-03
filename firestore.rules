@@ -9,6 +9,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'elonmusk241@gmail.com' ||
         request.auth.token.email == 'johnlsacc23332@gmail.com'
       );
     }
@@ -35,9 +36,14 @@ service cloud.firestore {
       allow read, create, update, delete: if true;
     }
 
-    // One-on-one Conversations - accessible to participants
+    // One-on-one Conversations - accessible to participants and admin
     match /conversations/{conversationId} {
       allow read, write: if true;
+
+      // Subcollection messages under conversation
+      match /messages/{messageId} {
+        allow read, create, update, delete: if true;
+      }
     }
 
     // Private Messages

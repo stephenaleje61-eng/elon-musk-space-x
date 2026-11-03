@@ -17,11 +17,12 @@ import {
   uploadBytesResumable, 
   getDownloadURL 
 } from 'firebase/storage';
-import { db, storage, auth, handleFirestoreError, OperationType } from './config';
+import { db, storage, auth, handleFirestoreError, cleanFirestoreData, OperationType } from './config';
 import { 
   FriendRequest, 
   Conversation, 
   Message, 
+  MessageReplyContext,
   AppNotification, 
   UserProfile 
 } from '../types';
@@ -49,24 +50,24 @@ export async function sendFriendRequest(
   }
 
   const now = new Date().toISOString();
-  const requestData: FriendRequest = {
+  const requestData = cleanFirestoreData({
     id: requestId,
     senderId: uid,
     displayName: displayName.trim() || `Visitor-${uid.slice(0, 5)}`,
     photoURL: photoURL || auth.currentUser?.photoURL || `https://api.dicebear.com/7.x/identicon/svg?seed=${uid}`,
     recipientId: 'admin',
     status: 'PENDING',
-    note: note.trim() || undefined,
+    note: note.trim() || null,
     createdAt: now,
     updatedAt: now,
-  };
+  });
 
   try {
     await setDoc(requestRef, requestData);
 
     // Notify admin
     const notifId = `notif_admin_${Date.now()}`;
-    await setDoc(doc(db, 'notifications', notifId), {
+    await setDoc(doc(db, 'notifications', notifId), cleanFirestoreData({
       id: notifId,
       userId: 'admin',
       type: 'friend_request',
@@ -75,7 +76,7 @@ export async function sendFriendRequest(
       link: '/admin',
       read: false,
       createdAt: now,
-    });
+    }));
 
     return requestId;
   } catch (error) {
@@ -132,25 +133,25 @@ export async function acceptFriendRequest(
     const convId = `conv_${request.senderId}_${adminId}`;
     const convRef = doc(db, 'conversations', convId);
     
-    const convData: Conversation = {
+    const convData: Conversation = cleanFirestoreData({
       id: convId,
       conversationId: convId,
       participants: [request.senderId, adminId],
       visitorId: request.senderId,
       visitorName: request.displayName,
-      visitorPhoto: request.photoURL,
+      visitorPhoto: request.photoURL || null,
       adminId: adminId,
       lastMessage: 'Connection accepted. Welcome to the private community network!',
       lastMessageAt: now,
       lastSenderId: adminId,
       createdAt: now,
       unreadCount: 1,
-    };
+    });
     await setDoc(convRef, convData, { merge: true });
 
     // 3. Post initial welcome message from admin
     const welcomeMsgId = `msg_${Date.now()}`;
-    await setDoc(doc(db, 'messages', welcomeMsgId), {
+    await setDoc(doc(db, 'messages', welcomeMsgId), cleanFirestoreData({
       id: welcomeMsgId,
       conversationId: convId,
       senderId: adminId,
@@ -160,11 +161,11 @@ export async function acceptFriendRequest(
       messageType: 'text',
       read: false,
       createdAt: now,
-    });
+    }));
 
     // 4. Send notification to visitor
     const notifId = `notif_${request.senderId}_${Date.now()}`;
-    await setDoc(doc(db, 'notifications', notifId), {
+    await setDoc(doc(db, 'notifications', notifId), cleanFirestoreData({
       id: notifId,
       userId: request.senderId,
       type: 'request_accepted',
@@ -173,7 +174,7 @@ export async function acceptFriendRequest(
       link: '/messages',
       read: false,
       createdAt: now,
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `friendRequests/${request.id}`);
   }
@@ -186,13 +187,13 @@ export async function rejectFriendRequest(
   const now = new Date().toISOString();
 
   try {
-    await updateDoc(reqRef, {
+    await updateDoc(reqRef, cleanFirestoreData({
       status: 'REJECTED',
       updatedAt: now,
-    });
+    }));
 
     const notifId = `notif_${request.senderId}_${Date.now()}`;
-    await setDoc(doc(db, 'notifications', notifId), {
+    await setDoc(doc(db, 'notifications', notifId), cleanFirestoreData({
       id: notifId,
       userId: request.senderId,
       type: 'request_rejected',
@@ -200,7 +201,7 @@ export async function rejectFriendRequest(
       message: 'Your request could not be accepted at this time.',
       read: false,
       createdAt: now,
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `friendRequests/${request.id}`);
   }
@@ -240,20 +241,20 @@ export async function ensureVisitorConversation(
   const convRef = doc(db, 'conversations', convId);
   const now = new Date().toISOString();
 
-  const baseConv: Conversation = {
+  const baseConv: Conversation = cleanFirestoreData({
     id: convId,
     conversationId: convId,
     participants: [visitorId, 'admin'],
     visitorId,
     visitorName,
-    visitorPhoto: visitorPhoto || undefined,
+    visitorPhoto: visitorPhoto || null,
     adminId: 'admin',
     lastMessage: 'Channel opened',
     lastMessageAt: now,
     lastSenderId: visitorId,
     createdAt: now,
     unreadCount: 0,
-  };
+  });
 
   try {
     const snap = await getDoc(convRef);
@@ -268,35 +269,58 @@ export async function ensureVisitorConversation(
   }
 }
 
+export async function updateUserPresence(userId: string, isOnline: boolean): Promise<void> {
+  if (!userId) return;
+  const now = new Date().toISOString();
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, cleanFirestoreData({ online: isOnline, lastSeen: now }), { merge: true });
+  } catch (err) {
+    // Suppress transient presence errors
+  }
+}
+
 export async function sendMessage(
   conversationId: string,
   senderId: string,
   senderName: string,
   receiverId: string,
   text: string,
-  imageUrl?: string
+  imageUrl?: string,
+  replyTo?: MessageReplyContext
 ): Promise<void> {
   if (!text.trim() && !imageUrl) return;
 
   const msgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
 
-  const msgData: Message = {
+  const rawMsgData: Record<string, any> = {
     id: msgId,
     conversationId,
     senderId,
     senderName,
     receiverId,
     text: text.trim(),
-    imageUrl: imageUrl || undefined,
+    imageUrl: imageUrl || null,
     messageType: imageUrl ? 'image' : 'text',
     read: false,
+    status: 'sent',
+    deliveredAt: now,
+    replyTo: replyTo ? cleanFirestoreData(replyTo) : null,
     createdAt: now,
   };
+  const cleanData = cleanFirestoreData(rawMsgData);
 
   try {
     // 1. Permanently save message to Firestore 'messages' collection
-    await setDoc(doc(db, 'messages', msgId), msgData);
+    await setDoc(doc(db, 'messages', msgId), cleanData);
+
+    // Also write to subcollection for direct relational structure
+    try {
+      await setDoc(doc(db, 'conversations', conversationId, 'messages', msgId), cleanData);
+    } catch (subErr) {
+      // Non-fatal if subcollection write hits different rule in test
+    }
 
     // 2. Safely create or update conversation metadata using setDoc merge: true
     const convRef = doc(db, 'conversations', conversationId);
@@ -318,11 +342,11 @@ export async function sendMessage(
       convUpdatePayload.visitorName = senderName;
     }
 
-    await setDoc(convRef, convUpdatePayload, { merge: true });
+    await setDoc(convRef, cleanFirestoreData(convUpdatePayload), { merge: true });
 
     // 3. Notify receiver
     const notifId = `notif_${receiverId}_${Date.now()}`;
-    await setDoc(doc(db, 'notifications', notifId), {
+    await setDoc(doc(db, 'notifications', notifId), cleanFirestoreData({
       id: notifId,
       userId: receiverId,
       type: 'new_message',
@@ -331,7 +355,7 @@ export async function sendMessage(
       link: '/messages',
       read: false,
       createdAt: now,
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `messages/${msgId}`);
   }
@@ -341,6 +365,7 @@ export async function markMessagesAsRead(
   conversationId: string, 
   currentUserId: string
 ): Promise<void> {
+  const now = new Date().toISOString();
   try {
     const q = query(
       collection(db, 'messages'),
@@ -349,8 +374,26 @@ export async function markMessagesAsRead(
       where('read', '==', false)
     );
     const snap = await getDocs(q);
-    const updates = snap.docs.map((d) => updateDoc(d.ref, { read: true }));
+    const updates = snap.docs.map(async (d) => {
+      await updateDoc(d.ref, { 
+        read: true, 
+        status: 'read', 
+        readAt: now 
+      });
+      try {
+        await updateDoc(doc(db, 'conversations', conversationId, 'messages', d.id), {
+          read: true,
+          status: 'read',
+          readAt: now,
+        });
+      } catch (err) {}
+    });
     await Promise.all(updates);
+
+    // Update conversation unread count
+    try {
+      await updateDoc(doc(db, 'conversations', conversationId), { unreadCount: 0 });
+    } catch (e) {}
   } catch (error) {
     console.error('Error marking messages as read:', error);
   }
@@ -497,6 +540,8 @@ export function listenToNotifications(
   });
 }
 
+export const listenToUserNotifications = listenToNotifications;
+
 export async function markNotificationAsRead(notifId: string): Promise<void> {
   try {
     await updateDoc(doc(db, 'notifications', notifId), { read: true });
@@ -559,9 +604,14 @@ export function listenToBlockedUsers(callback: (blockedIds: string[]) => void) {
 // MESSAGE MODERATION
 // ==========================================
 
-export async function deleteMessage(messageId: string): Promise<void> {
+export async function deleteMessage(messageId: string, conversationId?: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'messages', messageId));
+    if (conversationId) {
+      try {
+        await deleteDoc(doc(db, 'conversations', conversationId, 'messages', messageId));
+      } catch (subErr) {}
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `messages/${messageId}`);
   }
@@ -586,20 +636,28 @@ export async function submitInvestmentInquiry(data: {
   const inquiryId = `inv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
 
-  const record = {
+  const record = cleanFirestoreData({
     id: inquiryId,
     userId: uid,
-    ...data,
+    investorName: data.investorName,
+    organization: data.organization || null,
+    email: data.email,
+    phone: data.phone || null,
+    investorType: data.investorType,
+    targetSector: data.targetSector,
+    targetAmount: data.targetAmount,
+    timeline: data.timeline || null,
+    notes: data.notes || null,
     status: 'SUBMITTED',
     createdAt: now,
-  };
+  });
 
   try {
     await setDoc(doc(db, 'investments', inquiryId), record);
 
     // Notify Administrator
     const notifId = `notif_admin_inv_${Date.now()}`;
-    await setDoc(doc(db, 'notifications', notifId), {
+    await setDoc(doc(db, 'notifications', notifId), cleanFirestoreData({
       id: notifId,
       userId: 'admin',
       type: 'investment_inquiry',
@@ -608,7 +666,7 @@ export async function submitInvestmentInquiry(data: {
       link: '/admin',
       read: false,
       createdAt: now,
-    });
+    }));
 
     return inquiryId;
   } catch (error) {

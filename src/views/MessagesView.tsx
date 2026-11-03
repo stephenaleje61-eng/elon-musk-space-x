@@ -5,19 +5,18 @@ import {
   X, 
   CheckCheck, 
   Check, 
-  Clock, 
   ShieldCheck, 
-  User, 
   AlertCircle, 
   Trash2, 
-  Lock, 
   Sparkles, 
   UserPlus, 
   ArrowLeft, 
   Maximize2, 
-  Download, 
   ChevronRight, 
-  Info 
+  Info,
+  Reply,
+  CornerDownRight,
+  Search
 } from 'lucide-react';
 import { useAuth } from '../firebase/authContext';
 import { 
@@ -29,9 +28,11 @@ import {
   listenToAdminConversations, 
   listenToVisitorConversation, 
   ensureVisitorConversation,
-  deleteMessage 
+  deleteMessage,
+  updateUserPresence
 } from '../firebase/services';
-import { Message, Conversation, FriendRequest } from '../types';
+import { Message, Conversation, FriendRequest, MessageReplyContext } from '../types';
+import { SafeImage } from '../components/SafeImage';
 
 interface MessagesViewProps {
   onOpenFriendModal: () => void;
@@ -45,9 +46,13 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Mobile responsive view mode: 'list' | 'thread'
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
+
+  // Quoted Reply Context (Messenger style)
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
   // Image Upload State
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
@@ -63,7 +68,30 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // 1. Listen to user's friend request
+  // 1. Maintain user online status
+  useEffect(() => {
+    if (!user) return;
+    updateUserPresence(user.uid, true);
+
+    const handleVisibility = () => {
+      updateUserPresence(user.uid, document.visibilityState === 'visible');
+    };
+
+    const handleBeforeUnload = () => {
+      updateUserPresence(user.uid, false);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      updateUserPresence(user.uid, false);
+    };
+  }, [user]);
+
+  // 2. Listen to user's friend request
   useEffect(() => {
     if (!user) return;
     const unsub = listenToUserFriendRequest(user.uid, (req) => {
@@ -72,12 +100,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
     return () => unsub();
   }, [user]);
 
-  // 2. Fetch conversations
+  // 3. Conversation Management
   useEffect(() => {
     if (!user) return;
 
     if (isAdmin) {
-      // Admin sees all active conversations
       const unsub = listenToAdminConversations((convList) => {
         setConversations(convList);
         if (convList.length > 0 && !activeConversation) {
@@ -86,125 +113,144 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
       });
       return () => unsub();
     } else {
-      // Ensure visitor conversation document is created/merged in Firestore
-      ensureVisitorConversation(
-        user.uid,
-        profile?.displayName || `Explorer-${user.uid.slice(-4).toUpperCase()}`,
-        profile?.photoURL || undefined
-      );
+      const currentVisitorId = user.uid;
+      const currentVisitorName = profile?.displayName || user.displayName || 'Visitor';
+      const currentVisitorPhoto = profile?.photoURL || user.photoURL || undefined;
 
-      // Visitor sees their private 1-on-1 conversation with the website administrator
-      const unsub = listenToVisitorConversation(user.uid, (conv) => {
-        setActiveConversation(conv);
-        setConversations([conv]);
+      ensureVisitorConversation(currentVisitorId, currentVisitorName, currentVisitorPhoto)
+        .then((initialConv) => {
+          setActiveConversation((prev) => prev || initialConv);
+        })
+        .catch(console.error);
+
+      const unsub = listenToVisitorConversation(currentVisitorId, (conv) => {
+        if (conv) {
+          setConversations([conv]);
+          setActiveConversation(conv);
+        }
       });
       return () => unsub();
     }
   }, [user, isAdmin, profile]);
 
-  // 3. Listen to real-time messages in active conversation
+  // 4. Message Streaming & Auto Mark as Read
   useEffect(() => {
-    if (!activeConversation || !user) return;
+    if (!activeConversation) {
+      setMessages([]);
+      return;
+    }
 
-    const unsub = listenToConversationMessages(activeConversation.id, (newMessages) => {
-      setMessages(newMessages);
-      markMessagesAsRead(activeConversation.id, user.uid);
+    const unsub = listenToConversationMessages(activeConversation.id, (msgs) => {
+      setMessages(msgs);
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+
+      if (user) {
+        markMessagesAsRead(activeConversation.id, user.uid);
+      }
     });
 
     return () => unsub();
   }, [activeConversation, user]);
 
-  // Auto-scroll on new messages
+  // Auto-scroll when messages update
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, imagePreviewUrl]);
+  }, [messages]);
 
-  // Handle File Selection
+  // Image Selection Handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!validTypes.includes(file.type)) {
-      setUploadError('Invalid format. Please select JPEG, PNG, WebP, or GIF.');
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please select a valid photographic image file (JPEG, PNG, WebP).');
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setUploadError('Image exceeds the 5MB file size limit.');
+      setUploadError('Photographic payload exceeds the 5MB ceiling.');
       return;
     }
 
     setUploadError(null);
     setSelectedImageFile(file);
-    setImagePreviewUrl(URL.createObjectURL(file));
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreviewUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleClearImage = () => {
     setSelectedImageFile(null);
     setImagePreviewUrl(null);
     setUploadProgress(null);
-    setUploadError(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
-  // Quick Starter Prompts
-  const quickPrompts = [
-    'Inquire about Starship launch cadence & orbital tests',
-    'Starlink Direct-to-Cell technical details & handsets',
-    'Space capital allocation & syndicate qualification criteria',
-    'Tesla Optimus humanoid deployment in Gigafactories',
-  ];
-
-  const handleSelectQuickPrompt = (prompt: string) => {
-    setInputText(prompt);
-    textareaRef.current?.focus();
-  };
-
-  // Send Message
+  // Send Message Handler
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!user || !activeConversation) return;
-    if (!inputText.trim() && !selectedImageFile) return;
-    if (isUploading) return;
+    if (!activeConversation || !user) return;
 
-    setIsUploading(true);
-    setUploadError(null);
+    const trimmedText = inputText.trim();
+    if (!trimmedText && !selectedImageFile) return;
 
     let finalImageUrl: string | undefined = undefined;
 
-    try {
-      if (selectedImageFile) {
+    if (selectedImageFile) {
+      try {
+        setIsUploading(true);
         finalImageUrl = await uploadChatImage(
-          selectedImageFile, 
-          user.uid, 
+          selectedImageFile,
+          user.uid,
           (progress) => setUploadProgress(progress)
         );
+      } catch (err: any) {
+        setUploadError(err.message || 'Image transmission failed. Please retry.');
+        setIsUploading(false);
+        return;
+      } finally {
+        setIsUploading(false);
+        setUploadProgress(null);
       }
+    }
 
-      const receiverId = isAdmin ? activeConversation.visitorId : 'admin';
-      const senderName = profile?.displayName || (isAdmin ? 'Community Administrator' : 'Explorer');
+    const receiverId = isAdmin ? activeConversation.visitorId : 'admin';
+    const senderName = profile?.displayName || user.displayName || (isAdmin ? 'Community Administrator' : 'Explorer');
 
+    // Messenger quoted reply context
+    const replyContext: MessageReplyContext | undefined = replyingTo ? {
+      id: replyingTo.id,
+      senderName: replyingTo.senderName || 'Sender',
+      text: replyingTo.text ? (replyingTo.text.length > 90 ? replyingTo.text.substring(0, 90) + '...' : replyingTo.text) : '📷 [Photograph]',
+      imageUrl: replyingTo.imageUrl,
+    } : undefined;
+
+    setInputText('');
+    handleClearImage();
+    setReplyingTo(null);
+
+    try {
       await sendMessage(
         activeConversation.id,
         user.uid,
         senderName,
         receiverId,
-        inputText.trim(),
-        finalImageUrl
+        trimmedText,
+        finalImageUrl,
+        replyContext
       );
-
-      setInputText('');
-      handleClearImage();
     } catch (err: any) {
-      setUploadError(err.message || 'Failed to send message.');
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(null);
+      console.error('Message transmission error:', err);
     }
   };
 
-  // Keyboard shortcut: Enter to send, Shift+Enter for new line
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -212,83 +258,116 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
     }
   };
 
+  const filteredConversations = conversations.filter((c) => {
+    if (!searchQuery.trim()) return true;
+    return (
+      c.visitorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.visitorId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.lastMessage && c.lastMessage.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  });
+
+  const quickPrompts = [
+    "What is the current flight schedule for Starship at Starbase?",
+    "How does the accredited space investment allocation syndicate work?",
+    "Can you explain the Starlink Direct-to-Cell technical specs?",
+    "What is the status of Tesla Optimus deployment in Gigafactories?"
+  ];
+
+  const handleSelectQuickPrompt = (prompt: string) => {
+    setInputText(prompt);
+    textareaRef.current?.focus();
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-12 bg-black">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 bg-black text-white">
       
-      {/* Messaging Header */}
-      <div className="border-b border-[#222222] pb-4 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-zinc-800 pb-6 mb-6">
         <div>
-          <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-[10px] font-mono text-white/60 uppercase tracking-widest">
-              {isAdmin ? 'ADMINISTRATOR PRIVATE CHAT HUB' : 'DIRECT 1:1 PLATFORM CHANNEL • REAL-TIME FIRESTORE'}
-            </span>
+          <div className="inline-flex items-center space-x-2 text-[10px] font-mono text-zinc-400 uppercase tracking-widest mb-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-white" />
+            <span>DIRECT PLATFORM PROTOCOL • REAL-TIME FIRESTORE</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
-            {isAdmin ? 'COMMUNITY INBOX & REPLIES' : 'CHAT WITH ELON MUSK SPACE'}
+          <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight uppercase">
+            PRIVATE MESSAGING
           </h1>
+          <p className="text-xs sm:text-sm text-zinc-400 max-w-2xl mt-1">
+            Real-time two-way private communication with the platform administrator. Ask engineering questions, submit space syndicate interest, and share telemetry photographs.
+          </p>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <div className="text-left sm:text-right">
-            <div className="text-xs font-semibold text-white">
-              {profile?.displayName || 'Explorer'}
-            </div>
-            <div className="text-[10px] text-white/40 font-mono">
-              ID: {user?.uid ? `${user.uid.slice(0, 10)}...` : 'Connecting...'}
-            </div>
-          </div>
-
+        <div className="flex items-center space-x-2">
           <button
             onClick={onOpenFriendModal}
-            className="px-3.5 py-1.5 rounded-lg bg-[#111111] hover:bg-[#181818] border border-[#262626] text-white text-[10px] font-mono uppercase tracking-wider flex items-center space-x-1.5 transition-colors"
+            className="px-4 py-2 bg-transparent hover:bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center space-x-1.5 transition-colors cursor-pointer"
             title="Request Verified Badge"
           >
-            <UserPlus className="w-3 h-3 text-white" />
+            <UserPlus className="w-3.5 h-3.5 text-white" />
             <span className="hidden sm:inline">VERIFIED BADGE</span>
           </button>
         </div>
       </div>
 
       {/* Transparency Disclaimer Notice */}
-      <div className="mb-4 p-3 rounded-xl bg-[#0a0a0a] border border-[#222222] flex items-center justify-between text-xs">
-        <div className="flex items-center space-x-2.5 text-white/70">
+      <div className="mb-4 p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-between text-xs shadow-md">
+        <div className="flex items-center space-x-3 text-zinc-300">
           <Info className="w-4 h-4 text-white shrink-0" />
-          <span className="text-[11px] leading-tight">
-            <strong className="text-white">Direct 1-on-1 Channel:</strong> Messages are sent directly to the website owner & administrator, stored permanently in Firestore, and answered personally. Not an official Elon Musk account. No bots or automated simulations.
+          <span className="text-[11px] leading-relaxed">
+            <strong className="text-white">Private 1-on-1 Messenger:</strong> You are communicating directly with the website administrator (elonmusk241@gmail.com). Messages are permanently preserved in Cloud Firestore with real-time delivery receipts. Not an official Elon Musk account.
           </span>
         </div>
-        <div className="hidden lg:flex items-center space-x-2 shrink-0 ml-4 font-mono text-[10px] text-white/50">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          <span>PERMANENT FIRESTORE STORAGE</span>
+        <div className="hidden lg:flex items-center space-x-2 shrink-0 ml-4 font-mono text-[10px] text-zinc-400">
+          <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span>FIRESTORE CLOUD SYNC ACTIVE</span>
         </div>
       </div>
 
-      {/* Main Chat Layout Container */}
-      <div className="bg-[#0a0a0a] border border-[#222222] rounded-2xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 min-h-[640px] max-h-[780px]">
+      {/* Main Messenger Container */}
+      <div className="bg-black border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12 min-h-[660px] max-h-[820px]">
         
         {/* Left Sidebar (Conversations List) */}
-        <div className={`md:col-span-4 lg:col-span-3 border-r border-[#222222] bg-black flex flex-col ${
+        <div className={`md:col-span-4 lg:col-span-3 border-r border-zinc-800 bg-zinc-950 flex flex-col ${
           mobileView === 'thread' ? 'hidden md:flex' : 'flex'
         }`}>
-          <div className="p-3.5 border-b border-[#222222] bg-[#0a0a0a] flex items-center justify-between">
-            <span className="text-[11px] font-mono font-bold text-white tracking-widest uppercase">
-              {isAdmin ? `INBOX (${conversations.length})` : 'COMMUNITY STAFF'}
-            </span>
-            <span className="text-[9px] text-white/60 font-mono">ACTIVE</span>
+          {/* Sidebar Header & Search */}
+          <div className="p-3.5 border-b border-zinc-800 bg-zinc-900 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono font-bold text-white tracking-widest uppercase">
+                {isAdmin ? `INBOX (${conversations.length})` : 'CONVERSATION'}
+              </span>
+              <span className="text-[10px] text-emerald-400 font-mono font-bold flex items-center space-x-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>ONLINE</span>
+              </span>
+            </div>
+
+            {isAdmin && (
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search visitors..."
+                  className="w-full bg-black border border-zinc-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-zinc-600"
+                />
+              </div>
+            )}
           </div>
 
-          <div className="overflow-y-auto flex-1 divide-y divide-[#1f1f1f]">
-            {conversations.length === 0 ? (
-              <div className="p-6 text-center text-xs text-white/40 font-mono">
-                {isAdmin ? 'No active conversations yet.' : 'Connecting to community administrator...'}
+          {/* Conversations Scrollable List */}
+          <div className="overflow-y-auto flex-1 divide-y divide-zinc-900">
+            {filteredConversations.length === 0 ? (
+              <div className="p-6 text-center text-xs text-zinc-500 font-mono">
+                {isAdmin ? 'No conversations matching filter.' : 'Connecting to administrator...'}
               </div>
             ) : (
-              conversations.map((conv) => {
+              filteredConversations.map((conv) => {
                 const isActive = activeConversation?.id === conv.id;
-                const title = isAdmin ? conv.visitorName : 'Community Administrator';
+                const title = isAdmin ? conv.visitorName : 'Elon Musk Space Administrator';
                 const avatar = isAdmin
-                  ? (conv.visitorPhoto || `https://api.dicebear.com/7.x/identicon/svg?seed=${conv.visitorId}`)
+                  ? (conv.visitorPhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(conv.visitorName || 'Visitor')}&background=18181b&color=ffffff&bold=true`)
                   : 'https://images.unsplash.com/photo-1517976487502-5731f4786762?auto=format&fit=crop&w=200&q=80';
 
                 return (
@@ -299,33 +378,34 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
                       setMobileView('thread');
                     }}
                     className={`p-3.5 flex items-center space-x-3 cursor-pointer transition-colors ${
-                      isActive ? 'bg-[#181818] border-l-2 border-white' : 'hover:bg-[#111111]'
+                      isActive ? 'bg-zinc-900 border-l-4 border-white shadow-sm' : 'hover:bg-zinc-900/60'
                     }`}
                   >
                     <div className="relative shrink-0">
-                      <img
+                      <SafeImage
                         src={avatar}
                         alt={title}
-                        className="w-9 h-9 rounded-full object-cover border border-[#222222] grayscale"
+                        fallbackText={title}
+                        className="w-10 h-10 rounded-full object-cover border border-zinc-800"
                       />
-                      <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-white ring-2 ring-black"></span>
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-black"></span>
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-xs font-bold text-white truncate">{title}</span>
                         {conv.lastMessageAt && (
-                          <span className="text-[9px] text-white/40 shrink-0 font-mono">
+                          <span className="text-[9px] text-zinc-500 shrink-0 font-mono">
                             {new Date(conv.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-white/50 truncate font-mono">
-                        {conv.lastMessage || 'Channel ready.'}
+                      <p className="text-[11px] text-zinc-400 truncate font-mono">
+                        {conv.lastMessage || 'Channel active.'}
                       </p>
                     </div>
 
-                    <ChevronRight className="w-3.5 h-3.5 text-white/30 md:hidden shrink-0" />
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-600 md:hidden shrink-0" />
                   </div>
                 );
               })
@@ -333,71 +413,86 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
           </div>
         </div>
 
-        {/* Right Chat Panel */}
-        <div className={`md:col-span-8 lg:col-span-9 flex flex-col bg-[#0a0a0a] h-full ${
+        {/* Right Chat Panel (Messenger Thread) */}
+        <div className={`md:col-span-8 lg:col-span-9 flex flex-col bg-black h-full ${
           mobileView === 'list' ? 'hidden md:flex' : 'flex'
         }`}>
           
           {/* Active Conversation Top Bar */}
-          <div className="px-4 sm:px-5 py-3 border-b border-[#222222] bg-[#111111] flex items-center justify-between">
+          <div className="px-5 py-3.5 border-b border-zinc-800 bg-zinc-900/90 flex items-center justify-between">
             <div className="flex items-center space-x-3">
               {/* Mobile Back Button */}
               <button
                 onClick={() => setMobileView('list')}
-                className="md:hidden p-1.5 -ml-1 text-white/70 hover:text-white rounded-lg hover:bg-black/50"
+                className="md:hidden p-1.5 -ml-1 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800"
                 title="Back to inbox"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
 
-              <div className="w-8 h-8 rounded-full bg-[#181818] border border-[#262626] overflow-hidden">
-                <img
+              <div className="relative w-9 h-9 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden">
+                <SafeImage
                   src={
                     isAdmin
-                      ? (activeConversation?.visitorPhoto || `https://api.dicebear.com/7.x/identicon/svg?seed=${activeConversation?.visitorId}`)
+                      ? (activeConversation?.visitorPhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeConversation?.visitorName || 'Visitor')}&background=18181b&color=ffffff&bold=true`)
                       : 'https://images.unsplash.com/photo-1517976487502-5731f4786762?auto=format&fit=crop&w=200&q=80'
                   }
                   alt="Recipient"
-                  className="w-full h-full object-cover grayscale"
+                  fallbackText="USER"
+                  className="w-full h-full object-cover"
                 />
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-black"></span>
               </div>
               <div>
                 <div className="text-xs font-bold text-white flex items-center space-x-1.5">
                   <span>{isAdmin ? (activeConversation?.visitorName || 'Visitor') : 'Elon Musk Space Administrator'}</span>
-                  <span className="px-1.5 py-0.2 rounded text-[8px] bg-white/10 text-white font-mono uppercase">
-                    {isAdmin ? 'Visitor' : 'SITE OWNER • 1:1'}
+                  <span className="px-1.5 py-0.2 rounded text-[8px] bg-white text-black font-mono uppercase font-bold">
+                    {isAdmin ? 'Visitor' : 'ADMIN • VERIFIED'}
                   </span>
                 </div>
-                <div className="text-[9px] text-white/50 font-mono flex items-center space-x-1">
+                <div className="text-[10px] text-zinc-400 font-mono flex items-center space-x-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                  <span>{isAdmin ? `Visitor ID: ${activeConversation?.visitorId.slice(0, 10)}...` : 'Direct human replies • No bots'}</span>
+                  <span>Active Now • Direct Human Communication</span>
                 </div>
               </div>
             </div>
 
-            <div className="text-[10px] text-white/40 font-mono flex items-center space-x-1.5">
+            <div className="text-[10px] text-zinc-400 font-mono flex items-center space-x-1.5 bg-zinc-950 px-2.5 py-1 rounded-full border border-zinc-800">
               <ShieldCheck className="w-3.5 h-3.5 text-white" />
               <span className="hidden sm:inline">Encrypted Firestore 1:1</span>
             </div>
           </div>
 
           {/* Messages Stream */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-black">
             {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-[#111111] border border-[#222222] flex items-center justify-center text-white shadow-md">
-                  <Sparkles className="w-6 h-6 text-white" />
+              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-white shadow-md">
+                  <Sparkles className="w-7 h-7 text-white" />
                 </div>
                 <div className="space-y-1.5">
-                  <h4 className="text-xs font-bold text-white uppercase font-mono tracking-wider">
+                  <h4 className="text-sm font-bold text-white uppercase font-mono tracking-wider">
                     Direct 1-on-1 Channel Ready
                   </h4>
-                  <p className="text-xs text-white/60 max-w-md leading-relaxed">
-                    Type a message below to communicate directly with the website owner & administrator. Inquire about Starship flights, orbital infrastructure, Starlink Direct-to-Cell, or syndicate investments.
+                  <p className="text-xs text-zinc-400 max-w-md leading-relaxed">
+                    Type a message below to communicate directly with the website administrator. Ask about Starship flights, orbital infrastructure, Starlink Direct-to-Cell, or syndicate investments.
                   </p>
-                  <div className="pt-1 text-[10px] text-white/40 font-mono">
-                    All messages are saved permanently in Firestore and will never disappear.
+                  <div className="pt-2 text-[10px] text-zinc-500 font-mono">
+                    Messages are permanently recorded in Cloud Firestore and will never disappear.
                   </div>
+                </div>
+
+                {/* Quick Prompts */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-lg pt-2 text-left">
+                  {quickPrompts.map((prompt, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSelectQuickPrompt(prompt)}
+                      className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-[11px] text-zinc-300 hover:text-white transition-all shadow-sm cursor-pointer"
+                    >
+                      "{prompt}"
+                    </button>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -407,9 +502,10 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
                 return (
                   <div
                     key={msg.id}
-                    className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}
+                    className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group relative`}
                   >
-                    <div className="text-[9px] text-white/40 mb-1 px-1 flex items-center space-x-1 font-mono">
+                    {/* Sender & Timestamp */}
+                    <div className="text-[9px] text-zinc-500 mb-1 px-1 flex items-center space-x-1 font-mono">
                       <span>{msg.senderName || (isMe ? 'You' : 'Admin')}</span>
                       <span>•</span>
                       <span>
@@ -417,60 +513,112 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
                       </span>
                     </div>
 
-                    <div
-                      className={`max-w-[85%] sm:max-w-md rounded-2xl p-3 sm:p-4 text-xs shadow-md transition-all ${
-                        isMe
-                          ? 'bg-white text-black rounded-tr-none font-medium'
-                          : 'bg-[#181818] border border-[#262626] text-white rounded-tl-none'
-                      }`}
-                    >
-                      {/* Attached Image */}
-                      {msg.imageUrl && (
-                        <div className="mb-2 relative group/img rounded-xl overflow-hidden bg-black/40 border border-black/20 max-h-72">
-                          <img
-                            src={msg.imageUrl}
-                            alt="Uploaded attachment"
-                            className="w-full h-full object-cover cursor-pointer hover:scale-[1.01] transition-transform grayscale"
-                            onClick={() => setLightboxImageUrl(msg.imageUrl || null)}
-                          />
-                          <button
-                            onClick={() => setLightboxImageUrl(msg.imageUrl || null)}
-                            className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/70 text-white opacity-0 group-hover/img:opacity-100 transition-opacity"
-                            title="Expand photograph"
-                          >
-                            <Maximize2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Text */}
-                      {msg.text && (
-                        <p className="whitespace-pre-wrap leading-relaxed break-words">
-                          {msg.text}
-                        </p>
-                      )}
-
-                      {/* Message Footer Status */}
-                      <div className={`flex items-center justify-end space-x-1 mt-1 text-[9px] ${
-                        isMe ? 'text-black/60' : 'text-white/40'
-                      }`}>
-                        {isMe && (
-                          msg.read ? (
-                            <span title="Read"><CheckCheck className="w-3.5 h-3.5 text-black" /></span>
-                          ) : (
-                            <span title="Delivered"><Check className="w-3.5 h-3.5 opacity-70" /></span>
-                          )
+                    <div className="relative flex items-center max-w-[85%] sm:max-w-md">
+                      
+                      {/* Messenger Bubble:
+                          - My messages: bg-white text-black rounded-br-none
+                          - Other messages: bg-zinc-900 text-white border border-zinc-800 rounded-bl-none
+                      */}
+                      <div
+                        className={`rounded-2xl p-3 sm:p-4 text-xs shadow-md transition-all relative ${
+                          isMe
+                            ? 'bg-white text-black rounded-br-none font-medium'
+                            : 'bg-zinc-900 text-white border border-zinc-800 rounded-bl-none'
+                        }`}
+                      >
+                        {/* Quoted Reply Snippet (if message replies to another) */}
+                        {msg.replyTo && (
+                          <div className={`mb-2 p-2 rounded-lg text-[10px] border-l-2 flex flex-col ${
+                            isMe 
+                              ? 'bg-zinc-100 border-black text-zinc-800' 
+                              : 'bg-black/60 border-zinc-500 text-zinc-300'
+                          }`}>
+                            <span className="font-bold font-mono uppercase text-[9px] opacity-80">
+                              Replying to {msg.replyTo.senderName}
+                            </span>
+                            <span className="line-clamp-2 italic">
+                              "{msg.replyTo.text}"
+                            </span>
+                          </div>
                         )}
-                        {isAdmin && (
+
+                        {/* Attached Image */}
+                        {msg.imageUrl && (
+                          <div className="mb-2 relative group/img rounded-xl overflow-hidden bg-black border border-zinc-800 max-h-72">
+                            <SafeImage
+                              src={msg.imageUrl}
+                              alt="Uploaded attachment"
+                              fallbackText="ATTACHMENT"
+                              className="w-full h-full object-cover cursor-pointer hover:scale-[1.01] transition-transform"
+                              onClick={() => setLightboxImageUrl(msg.imageUrl || null)}
+                            />
+                            <button
+                              onClick={() => setLightboxImageUrl(msg.imageUrl || null)}
+                              className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 text-white opacity-0 group-hover/img:opacity-100 transition-opacity"
+                              title="Expand photograph"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Text */}
+                        {msg.text && (
+                          <p className="whitespace-pre-wrap leading-relaxed break-words">
+                            {msg.text}
+                          </p>
+                        )}
+
+                        {/* Message Delivery Status Indicator */}
+                        <div className={`flex items-center justify-end space-x-1.5 mt-1.5 text-[9px] ${
+                          isMe ? 'text-zinc-500' : 'text-zinc-400'
+                        }`}>
+                          {isMe && (
+                            msg.read || msg.status === 'read' ? (
+                              <span title="Read by recipient" className="flex items-center space-x-0.5 text-emerald-600 font-semibold">
+                                <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                <span className="text-[8px] font-mono uppercase">Read</span>
+                              </span>
+                            ) : msg.status === 'delivered' ? (
+                              <span title="Delivered to recipient" className="flex items-center space-x-0.5 text-zinc-500">
+                                <CheckCheck className="w-3.5 h-3.5 opacity-80" />
+                                <span className="text-[8px] font-mono uppercase">Delivered</span>
+                              </span>
+                            ) : (
+                              <span title="Sent" className="flex items-center space-x-0.5 text-zinc-500">
+                                <Check className="w-3.5 h-3.5 opacity-80" />
+                                <span className="text-[8px] font-mono uppercase">Sent</span>
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Hover Action: Quick Reply & Delete */}
+                      <div className={`absolute top-1 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity ${
+                        isMe ? '-left-14' : '-right-14'
+                      }`}>
+                        <button
+                          onClick={() => {
+                            setReplyingTo(msg);
+                            textareaRef.current?.focus();
+                          }}
+                          className="p-1.5 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-800 shadow-sm cursor-pointer"
+                          title="Reply to message"
+                        >
+                          <Reply className="w-3.5 h-3.5" />
+                        </button>
+                        {(isAdmin || isMe) && (
                           <button
-                            onClick={() => deleteMessage(msg.id)}
-                            className="ml-2 opacity-0 group-hover:opacity-100 text-red-500 transition-opacity"
+                            onClick={() => deleteMessage(msg.id, activeConversation?.id)}
+                            className="p-1.5 rounded-full bg-zinc-900 border border-zinc-700 text-red-400 hover:bg-red-950/60 shadow-sm cursor-pointer"
                             title="Delete message"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
+
                     </div>
                   </div>
                 );
@@ -479,79 +627,77 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick Starter Prompts Chips */}
-          <div className="px-3 sm:px-4 py-2 border-t border-[#1f1f1f] bg-[#0c0c0c] flex items-center space-x-1.5 overflow-x-auto scrollbar-thin">
-            <span className="text-[9px] font-mono uppercase text-white/40 shrink-0 mr-1 hidden sm:inline">
-              Prompt Ideas:
-            </span>
-            {quickPrompts.map((p, idx) => (
+          {/* Quoted Reply Banner (Messenger style) */}
+          {replyingTo && (
+            <div className="px-5 py-2.5 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between text-xs animate-fade-in">
+              <div className="flex items-center space-x-2 text-zinc-300">
+                <CornerDownRight className="w-4 h-4 text-white shrink-0" />
+                <div className="text-[11px] truncate">
+                  <span className="font-bold text-white">Replying to {replyingTo.senderName || 'Sender'}:</span>{' '}
+                  <span className="text-zinc-400 italic truncate">
+                    {replyingTo.text || (replyingTo.imageUrl ? '📷 [Photograph]' : '')}
+                  </span>
+                </div>
+              </div>
               <button
-                key={idx}
-                type="button"
-                onClick={() => handleSelectQuickPrompt(p)}
-                className="px-2.5 py-1 rounded-full bg-[#161616] hover:bg-[#222222] text-[10px] text-white/70 hover:text-white border border-[#262626] whitespace-nowrap transition-colors shrink-0"
+                onClick={() => setReplyingTo(null)}
+                className="p-1 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 cursor-pointer"
+                title="Cancel reply"
               >
-                {p}
+                <X className="w-3.5 h-3.5" />
               </button>
-            ))}
-          </div>
+            </div>
+          )}
 
-          {/* Image Preview Container */}
+          {/* Image Upload Preview Drawer */}
           {imagePreviewUrl && (
-            <div className="px-4 py-2 bg-[#111111] border-t border-[#222222] flex items-center justify-between">
+            <div className="p-3 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between animate-fade-in">
               <div className="flex items-center space-x-3">
                 <img
                   src={imagePreviewUrl}
-                  alt="Preview"
-                  className="w-12 h-12 rounded object-cover border border-white"
+                  alt="Attachment preview"
+                  loading="lazy"
+                  className="w-12 h-12 rounded-lg object-cover object-center border border-zinc-800 shadow-sm"
                 />
-                <div className="text-xs">
-                  <span className="font-bold text-white block">Image ready to transmit</span>
-                  <span className="text-[10px] text-white/40 font-mono">
-                    {selectedImageFile?.name} ({((selectedImageFile?.size || 0) / 1024).toFixed(0)} KB)
+                <div>
+                  <span className="text-xs font-bold text-white block truncate max-w-xs">
+                    {selectedImageFile?.name}
                   </span>
-                  {uploadProgress !== null && (
-                    <div className="w-32 bg-zinc-800 h-1.5 rounded-full mt-1 overflow-hidden">
-                      <div
-                        className="bg-white h-full transition-all"
-                        style={{ width: `${uploadProgress}%` }}
-                      ></div>
-                    </div>
-                  )}
+                  <span className="text-[10px] text-zinc-400 font-mono">
+                    {selectedImageFile ? `${(selectedImageFile.size / 1024).toFixed(1)} KB` : ''}
+                  </span>
                 </div>
               </div>
-
               <button
-                type="button"
                 onClick={handleClearImage}
-                className="p-1.5 text-white/40 hover:text-white rounded hover:bg-[#1f1f1f]"
+                className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 cursor-pointer"
+                title="Remove attachment"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           )}
 
-          {/* Upload Error Banner */}
-          {uploadError && (
-            <div className="px-4 py-2 bg-red-950/20 border-t border-red-500/30 text-red-400 text-xs flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{uploadError}</span>
-              </div>
-              <button onClick={() => setUploadError(null)}>
-                <X className="w-3.5 h-3.5" />
-              </button>
+          {/* Upload Progress Indicator */}
+          {uploadProgress !== null && (
+            <div className="w-full bg-zinc-900 h-1">
+              <div
+                className="bg-white h-1 transition-all duration-200"
+                style={{ width: `${uploadProgress}%` }}
+              ></div>
             </div>
           )}
 
-          {/* Input Bar Form */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSendMessage();
-            }}
-            className="p-3 sm:p-4 bg-[#111111] border-t border-[#222222] flex items-end space-x-2"
-          >
+          {/* Upload Error Banner */}
+          {uploadError && (
+            <div className="px-5 py-2 bg-red-950/60 border-t border-red-800 text-red-300 text-xs flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{uploadError}</span>
+            </div>
+          )}
+
+          {/* Message Input Form */}
+          <form onSubmit={handleSendMessage} className="p-4 border-t border-zinc-800 bg-zinc-950 flex items-end space-x-3">
             <input
               type="file"
               ref={fileInputRef}
@@ -563,84 +709,59 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onOpenFriendModal })
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              title="Attach photograph (JPEG, PNG, WebP)"
-              className="p-2.5 rounded-xl bg-black hover:bg-[#181818] text-white border border-[#222222] hover:border-white/40 transition-all shrink-0 mb-0.5"
+              className="p-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-colors shrink-0 cursor-pointer"
+              title="Attach photograph (JPEG, PNG, WebP up to 5MB)"
             >
-              <ImageIcon className="w-4 h-4" />
+              <ImageIcon className="w-5 h-5" />
             </button>
 
-            <div className="flex-1 relative">
+            <div className="flex-1 bg-black border border-zinc-800 rounded-2xl px-4 py-2 focus-within:border-zinc-600 transition-colors shadow-inner">
               <textarea
                 ref={textareaRef}
-                rows={1}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type private message... (Enter to send, Shift+Enter for newline)"
-                disabled={isUploading}
-                maxLength={2000}
-                className="w-full bg-black border border-[#222222] focus:border-white rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition-colors resize-none leading-relaxed"
+                placeholder="Type your message (Enter to send, Shift+Enter for new line)..."
+                rows={1}
+                className="w-full bg-transparent text-xs text-white placeholder:text-zinc-500 focus:outline-none resize-none max-h-32 min-h-[24px]"
               />
             </div>
 
             <button
               type="submit"
-              disabled={isUploading || (!inputText.trim() && !selectedImageFile)}
-              className="px-4 py-2.5 bg-white hover:bg-zinc-200 disabled:opacity-40 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center space-x-1.5 shrink-0 mb-0.5"
+              disabled={(!inputText.trim() && !selectedImageFile) || isUploading}
+              className="p-3 bg-white hover:bg-zinc-200 disabled:opacity-30 text-black rounded-2xl shadow-md transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed font-bold"
+              title="Send message"
             >
-              {isUploading ? (
-                <Clock className="w-4 h-4 animate-spin text-black" />
-              ) : (
-                <>
-                  <Send className="w-3.5 h-3.5 text-black" />
-                  <span className="hidden sm:inline">SEND</span>
-                </>
-              )}
+              <Send className="w-5 h-5 text-black" />
             </button>
           </form>
 
-          {/* Footer Transparency Notice */}
-          <div className="px-4 py-1.5 bg-[#0a0a0a] border-t border-[#1a1a1a] flex items-center justify-between text-[9px] text-white/40 font-mono">
-            <span>Staff & Community Communication Network • Encrypted in Firestore</span>
-            <span>Independent Platform</span>
-          </div>
-
         </div>
-
       </div>
 
-      {/* Lightbox Modal for Full Image Inspection */}
+      {/* Lightbox Modal for High-Resolution Image Inspection */}
       {lightboxImageUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-fade-in">
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+        <div 
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setLightboxImageUrl(null)}
+        >
+          <div 
+            className="relative max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl bg-zinc-900 border border-zinc-800 p-2 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={() => setLightboxImageUrl(null)}
-              className="absolute -top-10 right-0 p-2 text-white/60 hover:text-white transition-colors"
+              className="absolute top-4 right-4 p-2 rounded-full bg-black/80 text-white hover:bg-black transition-colors cursor-pointer"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5" />
             </button>
             <img
               src={lightboxImageUrl}
-              alt="Full resolution preview"
-              className="max-w-full max-h-[80vh] object-contain rounded-xl border border-[#333333]"
+              alt="Enlarged inspection"
+              loading="lazy"
+              className="max-h-[82vh] w-auto object-contain object-center rounded-xl"
             />
-            <div className="mt-4 flex items-center space-x-3">
-              <a
-                href={lightboxImageUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 bg-white text-black font-bold text-xs uppercase rounded-lg flex items-center space-x-1.5"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Open Original Image</span>
-              </a>
-              <button
-                onClick={() => setLightboxImageUrl(null)}
-                className="px-4 py-2 bg-[#181818] border border-[#333333] text-white text-xs font-semibold rounded-lg"
-              >
-                Close Preview
-              </button>
-            </div>
           </div>
         </div>
       )}

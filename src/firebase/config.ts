@@ -61,23 +61,32 @@ export interface FirestoreErrorInfo {
   };
 }
 
+export function cleanFirestoreData<T>(data: T): any {
+  if (data === null || data === undefined) return null;
+  return JSON.parse(
+    JSON.stringify(data, (_key, value) => (value === undefined ? null : value))
+  );
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid || null,
-      email: auth.currentUser?.email || null,
-      emailVerified: auth.currentUser?.emailVerified || null,
-      isAnonymous: auth.currentUser?.isAnonymous || null,
-      tenantId: auth.currentUser?.tenantId || null,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email || null,
-      })) || []
+      userId: auth.currentUser?.uid ?? null,
+      email: auth.currentUser?.email ?? null,
+      emailVerified: auth.currentUser?.emailVerified ?? null,
+      isAnonymous: auth.currentUser?.isAnonymous ?? null,
+      tenantId: auth.currentUser?.tenantId ?? null,
+      providerInfo: (auth.currentUser?.providerData || []).map(provider => ({
+        providerId: provider.providerId ?? null,
+        email: provider.email ?? null,
+      }))
     },
     operationType,
-    path
+    path: path ?? null
   };
-  console.error('Firestore Error:', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  const sanitizedErr = cleanFirestoreData(errInfo);
+  console.error('Firestore Error:', JSON.stringify(sanitizedErr));
+  throw new Error(JSON.stringify(sanitizedErr));
 }
+
